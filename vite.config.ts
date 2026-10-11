@@ -32,26 +32,18 @@ export default defineConfig(({ mode }) => ({
       includeAssets: ["icons/icon-192.png", "icons/icon-512.png"],
       manifest: false, // Using external manifest.json
       workbox: {
+        importScripts: ["retire-api-cache.js"],
         navigateFallbackDenylist: [/^\/~oauth/],
         globPatterns: ["**/*.{js,css,html,ico,png,svg,woff,woff2}"],
          maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5MB
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/.*\.supabase\.co\/.*/i,
-            handler: "NetworkFirst",
-            options: {
-              cacheName: "supabase-api-cache",
-              expiration: {
-                maxEntries: 100,
-                maxAgeSeconds: 60 * 60 * 24, // 24 hours
-              },
-              cacheableResponse: {
-                statuses: [0, 200],
-              },
-            },
+            handler: "NetworkOnly",
+            options: { fetchOptions: { cache: "no-store" } },
           },
           {
-            urlPattern: /\.(png|jpg|jpeg|svg|gif|webp)$/,
+            urlPattern: ({ url, sameOrigin }) => sameOrigin && /\.(png|jpg|jpeg|svg|gif|webp)$/i.test(url.pathname),
             handler: "CacheFirst",
             options: {
               cacheName: "image-cache",
