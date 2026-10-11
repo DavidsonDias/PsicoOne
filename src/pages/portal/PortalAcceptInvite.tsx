@@ -1,168 +1,124 @@
-import { useEffect, useState } from "react";
+import { useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Brain, Loader2, CheckCircle2, AlertTriangle } from "lucide-react";
-import { toast } from "sonner";
+import { Brain, Loader2, CheckCircle2 } from "lucide-react";
 import { Helmet } from "react-helmet-async";
-
-type State = "loading" | "valid" | "invalid" | "ready" | "creating" | "done";
 
 export default function PortalAcceptInvite() {
   const { token } = useParams<{ token: string }>();
   const navigate = useNavigate();
-  const [state, setState] = useState<State>("loading");
-  const [invite, setInvite] = useState<any>(null);
+  const [mode, setMode] = useState<"login" | "signup">("login");
+  const [busy, setBusy] = useState(false);
+  const submitting = useRef(false);
+  const [done, setDone] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const tokenPresent = !!token && token.length <= 256;
 
-  useEffect(() => {
-    if (!token) {
-      setState("invalid");
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (submitting.current || !tokenPresent) return;
+    const fields = new FormData(event.currentTarget);
+    const email = String(fields.get("email") || "").trim().toLowerCase();
+    const password = String(fields.get("password") || "");
+    setError("");
+    setMessage("");
+    if (mode === "signup" && password !== fields.get("confirm")) {
+      setError("As senhas não coincidem.");
       return;
     }
-    (async () => {
-      const { data, error } = await supabase
-        .from("patient_invites")
-        .select("id, email, expires_at, accepted_at, is_revoked, patient_id")
-        .eq("token", token)
-        .maybeSingle();
-      if (error || !data || data.is_revoked || data.accepted_at || new Date(data.expires_at) < new Date()) {
-        setState("invalid");
+    submitting.current = true;
+    setBusy(true);
+    try {
+      const response = mode === "signup"
+        ? await supabase.auth.signUp({
+            email, password,
+            options: { emailRedirectTo: window.location.origin + "/portal/aceitar-convite/" + encodeURIComponent(token!) },
+          })
+        : await supabase.auth.signInWithPassword({ email, password });
+      if (response.error) {
+        setError(mode === "signup"
+          ? "Não foi possível criar a conta. Se já tem cadastro, escolha Entrar. Confira também os requisitos da senha."
+          : "Não foi possível entrar. Confira o e-mail, a senha e a confirmação do seu e-mail.");
         return;
       }
-      setInvite(data);
-      setState("valid");
-    })();
-  }, [token]);
-
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    setState("creating");
-    const fd = new FormData(e.currentTarget);
-    const password = fd.get("password") as string;
-    const confirm = fd.get("confirm") as string;
-
-    if (password.length < 6) {
-      toast.error("Senha deve ter ao menos 6 caracteres");
-      setState("valid");
-      return;
-    }
-    if (password !== confirm) {
-      toast.error("As senhas não coincidem");
-      setState("valid");
-      return;
-    }
-
-    try {
-      // 1) Create or sign-in user with invite email
-      const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
-        email: invite.email,
-        password,
-        options: { emailRedirectTo: `${window.location.origin}/portal/dashboard` },
-      });
-
-      let userId: string | undefined = signUpData?.user?.id;
-
-      // If account already exists, try to sign in
-      if (signUpErr || !userId) {
-        const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({
-          email: invite.email,
-          password,
-        });
-        if (signInErr || !signInData.user) {
-          throw new Error(
-            "Não foi possível criar/acessar a conta. Se você já tem cadastro, use o login normal."
-          );
-        }
-        userId = signInData.user.id;
+      // A user object alone is not proof of an authenticated session.
+      if (!response.data.session) {
+        setMessage("Confira seu e-mail para confirmar o cadastro. Depois, volte a este convite e entre com sua senha. Se já tinha uma conta, escolha Entrar.");
+        setMode("login");
+        return;
       }
-
-      // 2) Link user to patient via RPC
-      const { error: linkErr } = await supabase.rpc("accept_patient_invite", {
-        _token: token!,
-        _user_id: userId!,
+      const { data: identity, error: identityError } = await supabase.auth.getUser();
+      if (identityError || !identity.user || identity.user.email?.toLowerCase() !== email) {
+        setError("Não foi possível confirmar sua sessão. Entre novamente.");
+        return;
+      }
+      const { data, error: linkError } = await supabase.rpc("accept_patient_invite", {
+        _token: token!, _user_id: identity.user.id,
       });
-      if (linkErr) throw linkErr;
-
-      setState("done");
-      toast.success("Acesso ativado com sucesso!");
-      setTimeout(() => navigate("/portal/dashboard"), 1500);
-    } catch (e: any) {
-      toast.error(e?.message || "Falha ao ativar acesso");
-      setState("valid");
+      if (linkError || !data) {
+        setError("Não foi possível aceitar o convite. Use o e-mail confirmado que recebeu o convite. Se ele expirou ou já foi usado, peça um novo ao profissional.");
+        return;
+      }
+      setDone(true);
+    } catch {
+      setError("Não foi possível concluir agora. Verifique sua conexão e tente novamente.");
+    } finally {
+      submitting.current = false;
+      setBusy(false);
     }
   };
 
   return (
     <div className="min-h-screen bg-gradient-hero flex items-center justify-center p-4">
-      <Helmet>
-        <title>Ativar acesso — Portal do Paciente</title>
-      </Helmet>
+      <Helmet><title>Ativar acesso — Portal do Paciente</title><meta name="referrer" content="no-referrer" /></Helmet>
       <div className="w-full max-w-md">
         <div className="flex flex-col items-center mb-6 space-y-3">
-          <div className="w-14 h-14 rounded-xl bg-gradient-primary flex items-center justify-center shadow-lg">
-            <Brain className="w-8 h-8 text-primary-foreground" />
-          </div>
+          <Brain className="h-10 w-10 text-primary" />
           <h1 className="text-2xl font-bold text-gradient-primary">Portal do Paciente</h1>
         </div>
-
         <Card>
-          {state === "loading" && (
-            <CardContent className="py-12 flex flex-col items-center gap-3">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
-              <p className="text-sm text-muted-foreground">Validando convite...</p>
-            </CardContent>
-          )}
-
-          {state === "invalid" && (
-            <CardContent className="py-12 flex flex-col items-center gap-3 text-center">
-              <AlertTriangle className="h-10 w-10 text-destructive" />
-              <h2 className="font-semibold">Convite inválido ou expirado</h2>
-              <p className="text-sm text-muted-foreground">
-                Peça um novo convite ao seu profissional.
-              </p>
-              <Button variant="outline" onClick={() => navigate("/portal/login")}>
-                Ir para o login
-              </Button>
-            </CardContent>
-          )}
-
-          {(state === "valid" || state === "creating") && (
-            <>
-              <CardHeader>
-                <CardTitle>Crie sua senha</CardTitle>
-                <CardDescription>
-                  Você está ativando o acesso para <strong>{invite?.email}</strong>
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
+          <CardHeader>
+            <CardTitle>{done ? "Acesso ativado" : "Aceitar convite"}</CardTitle>
+            <CardDescription>Use o mesmo e-mail em que recebeu o convite do seu profissional.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {!tokenPresent ? <p role="alert">Convite inválido. Peça um novo link ao seu profissional.</p>
+              : done ? <>
+                <CheckCircle2 className="h-10 w-10 text-emerald-500" />
+                <p>Seu acesso foi ativado com sucesso.</p>
+                <Button onClick={() => navigate("/portal/dashboard")}>Abrir meu portal</Button>
+              </> : <>
+                <div className="flex gap-2">
+                  <Button type="button" variant={mode === "login" ? "default" : "outline"} disabled={busy} onClick={() => setMode("login")}>Entrar</Button>
+                  <Button type="button" variant={mode === "signup" ? "default" : "outline"} disabled={busy} onClick={() => setMode("signup")}>Criar conta</Button>
+                </div>
+                {message && <p role="status" className="text-sm">{message}</p>}
+                {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
                 <form onSubmit={handleSubmit} className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="password">Nova senha</Label>
-                    <Input id="password" name="password" type="password" minLength={6} required disabled={state === "creating"} />
+                    <Label htmlFor="invite-email">E-mail do convite</Label>
+                    <Input id="invite-email" name="email" type="email" autoComplete="email" required disabled={busy} />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="confirm">Confirme a senha</Label>
-                    <Input id="confirm" name="confirm" type="password" minLength={6} required disabled={state === "creating"} />
+                    <Label htmlFor="invite-password">{mode === "signup" ? "Nova senha" : "Senha"}</Label>
+                    <Input id="invite-password" name="password" type="password" autoComplete={mode === "signup" ? "new-password" : "current-password"} minLength={mode === "signup" ? 6 : undefined} required disabled={busy} />
                   </div>
-                  <Button type="submit" variant="hero" className="w-full" disabled={state === "creating"}>
-                    {state === "creating" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    Ativar meu acesso
+                  {mode === "signup" && <div className="space-y-2">
+                    <Label htmlFor="invite-confirm">Confirme a senha</Label>
+                    <Input id="invite-confirm" name="confirm" type="password" autoComplete="new-password" minLength={6} required disabled={busy} />
+                  </div>}
+                  <Button type="submit" variant="hero" className="w-full" disabled={busy}>
+                    {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    {mode === "signup" ? "Cadastrar e continuar" : "Entrar e aceitar convite"}
                   </Button>
                 </form>
-              </CardContent>
-            </>
-          )}
-
-          {state === "done" && (
-            <CardContent className="py-12 flex flex-col items-center gap-3 text-center">
-              <CheckCircle2 className="h-10 w-10 text-emerald-500" />
-              <h2 className="font-semibold">Tudo pronto!</h2>
-              <p className="text-sm text-muted-foreground">Redirecionando...</p>
-            </CardContent>
-          )}
+              </>}
+          </CardContent>
         </Card>
       </div>
     </div>
