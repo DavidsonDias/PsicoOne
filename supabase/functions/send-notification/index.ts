@@ -159,7 +159,7 @@ serve(async (req) => {
       });
     }
 
-    // Standard notification sending (email mock)
+    // No email transport exists on this path. Never acknowledge delivery.
     const { to, subject, message } = body;
     if (!to || !subject || !message) {
       return new Response(JSON.stringify({ error: "Missing required fields" }), {
@@ -168,9 +168,8 @@ serve(async (req) => {
       });
     }
 
-    console.log("Notification prepared:", { to, subject, type });
-
-    return new Response(JSON.stringify({ success: true }), {
+    return new Response(JSON.stringify({ success: false, sent: false, code: 'EMAIL_TRANSPORT_UNAVAILABLE', error: 'Envio de email indisponível nesta função.' }), {
+      status: 501,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error) {
