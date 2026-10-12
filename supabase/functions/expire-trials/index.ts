@@ -62,18 +62,24 @@ Deno.serve(async (req) => {
 
     for (const trial of expiredTrials) {
       // Update status to expired
-      const { error: updateError } = await supabase
+      const { data: updated, error: updateError } = await supabase
         .from("subscriptions")
         .update({
           status: "expired",
           updated_at: now,
         })
-        .eq("id", trial.id);
+        .eq("id", trial.id)
+        .eq("status", "trial")
+        .eq("trial_end_date", trial.trial_end_date)
+        .lt("trial_end_date", now)
+        .select("id");
 
       if (updateError) {
         console.error(`Failed to expire trial ${trial.id}:`, updateError);
         continue;
       }
+      // Another request may have extended, activated or already expired it.
+      if (!updated?.length) continue;
 
       // Log the action in audit_logs
       await supabase.from("audit_logs").insert({
