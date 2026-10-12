@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -104,6 +104,7 @@ export function BillingPlansPanel({
 }) {
   const [plans, setPlans] = useState<Plan[]>([]);
   const [open, setOpen] = useState(false);
+  const generatingRef = useRef(false);
   const [generatingId, setGeneratingId] = useState<string | null>(null);
   const [installments, setInstallments] = useState<Record<string, Installment[]>>({});
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -193,40 +194,30 @@ export function BillingPlansPanel({
   };
 
   const generateNow = async (plan: Plan) => {
+    if (generatingRef.current) return;
+    generatingRef.current = true;
     setGeneratingId(plan.id);
     try {
-      const patient = patients.find((x) => x.id === plan.patient_id);
       const due = nextDueDate(plan);
-      const dueStr = format(due, "yyyy-MM-dd");
-      const desc =
-        plan.description ||
-        `Cobrança ${TYPE_LABEL[plan.billing_type].toLowerCase()} — ${patient?.full_name || "Paciente"}`;
-
-      const { error } = await supabase.from("financial_transactions").insert({
-        psychologist_id: plan.psychologist_id as any,
-        patient_id: plan.patient_id,
-        billing_plan_id: plan.id,
-        type: "income",
-        status: "pending",
-        amount: Number(plan.amount),
-        due_date: dueStr,
-        description: desc,
-        payment_method: plan.payment_method || "pix",
-        category: plan.billing_type === "monthly" ? "Pacote mensal" : "Consulta psicológica",
-      } as any);
+      const { data, error } = await (supabase as any).rpc("generate_manual_billing_cycle", {
+        p_plan_id: plan.id,
+        p_expected_last_generated_at: plan.last_generated_at,
+        p_due_date: format(due, "yyyy-MM-dd"),
+      });
       if (error) throw error;
-
-      await supabase
-        .from("patient_billing_plans" as any)
-        .update({ last_generated_at: new Date().toISOString() })
-        .eq("id", plan.id);
-
-      toast.success(`Cobrança gerada para ${format(due, "dd/MM/yyyy")}`);
-      load();
+      if (data?.created === false && data?.reason === "stale_plan") {
+        toast.info("Este plano já foi atualizado. Confira os lançamentos antes de gerar outro.");
+      } else if (data?.created === true && typeof data?.transaction_id === "string") {
+        toast.success(`Cobrança gerada para ${format(due, "dd/MM/yyyy")}`);
+      } else {
+        throw new Error("Resposta inesperada");
+      }
+      await load();
       onChanged?.();
-    } catch (e: any) {
-      toast.error(e?.message || "Erro ao gerar cobrança");
+    } catch {
+      toast.error("Não foi possível confirmar a geração. Atualize a lista e confira os lançamentos antes de tentar novamente.");
     } finally {
+      generatingRef.current = false;
       setGeneratingId(null);
     }
   };
@@ -428,3 +419,4 @@ export function BillingPlansPanel({
     </Card>
   );
 }
+
