@@ -70,7 +70,7 @@ Deno.serve(async (req) => {
 
       const tokenData = await tokenRes.json();
       if (!tokenRes.ok) {
-        console.error("Google token exchange failed:", tokenData);
+        console.error("Google token exchange failed");
         return new Response(JSON.stringify({ error: "Falha na autenticação com Google" }), { status: 400, headers: corsHeaders });
       }
 
@@ -95,7 +95,7 @@ Deno.serve(async (req) => {
         }, { onConflict: "user_id" });
 
       if (upsertError) {
-        console.error("Upsert error:", upsertError);
+        console.error("Google Calendar token storage failed");
         return new Response(JSON.stringify({ error: "Erro ao salvar tokens" }), { status: 500, headers: corsHeaders });
       }
 
@@ -107,17 +107,19 @@ Deno.serve(async (req) => {
     // Disconnect
     if (action === "disconnect") {
       const serviceClient = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-      await serviceClient.from("google_calendar_tokens").delete().eq("user_id", userId);
+      const { error: deleteError } = await serviceClient.from("google_calendar_tokens").delete().eq("user_id", userId);
+      if (deleteError) return new Response(JSON.stringify({ error: "Não foi possível desconectar o Google Agenda" }), { status: 503, headers: corsHeaders });
       return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     // Status
     if (action === "status") {
-      const { data } = await supabase
+      const { data, error: statusError } = await supabase
         .from("google_calendar_tokens")
         .select("google_email, sync_enabled, auto_create, auto_update, sync_new_only")
         .eq("user_id", userId)
-        .single();
+        .maybeSingle();
+      if (statusError) return new Response(JSON.stringify({ error: "Não foi possível consultar a conexão com Google Agenda" }), { status: 503, headers: corsHeaders });
 
       return new Response(JSON.stringify({ connected: !!data, ...(data || {}) }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -139,7 +141,7 @@ Deno.serve(async (req) => {
 
     return new Response(JSON.stringify({ error: "Invalid action" }), { status: 400, headers: corsHeaders });
   } catch (err) {
-    console.error("Error:", err);
-    return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: corsHeaders });
+    console.error("Google Calendar request failed");
+    return new Response(JSON.stringify({ error: "Erro interno na integração com Google Agenda" }), { status: 500, headers: corsHeaders });
   }
 });
