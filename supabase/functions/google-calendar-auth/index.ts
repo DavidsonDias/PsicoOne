@@ -6,6 +6,9 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+const allowedReturns = new Set(['https://psicoonex.vercel.app/configuracoes', 'https://psicoone.vercel.app/configuracoes']);
+const stateHash = async (value: string) => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))), b => b.toString(16).padStart(2, '0')).join('');
+const fail = (status: number) => new Response(JSON.stringify({ error: 'Conexão inválida ou expirada. Inicie novamente.' }), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
 const GOOGLE_CLIENT_ID = Deno.env.get("GOOGLE_CLIENT_ID")!;
 const GOOGLE_CLIENT_SECRET = Deno.env.get("GOOGLE_CLIENT_SECRET")!;
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -36,10 +39,17 @@ Deno.serve(async (req) => {
     const userId = user.id;
 
     const body = await req.json();
-    const { action, code, redirect_uri, sync_enabled, auto_create, auto_update, sync_new_only } = body;
+    const { action, code, state, redirect_uri, sync_enabled, auto_create, auto_update, sync_new_only } = body;
 
+    if (action === 'get_auth_url' || action === 'exchange_code') {
+      if (typeof redirect_uri !== 'string' || !allowedReturns.has(redirect_uri)) return fail(400);
+    }
     // Generate OAuth URL
     if (action === "get_auth_url") {
+      const oauthState = Array.from(crypto.getRandomValues(new Uint8Array(32)), b => b.toString(16).padStart(2, '0')).join('');
+      const attempts = createClient(SUPABASE_URL, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+      const { error: attemptError } = await attempts.from('google_calendar_oauth_attempts').insert({ state_hash: await stateHash(oauthState), user_id: userId, redirect_uri });
+      if (attemptError) return fail(503);
       const params = new URLSearchParams({
         client_id: GOOGLE_CLIENT_ID,
         redirect_uri,
@@ -47,15 +57,20 @@ Deno.serve(async (req) => {
         scope: "https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/userinfo.email",
         access_type: "offline",
         prompt: "consent",
-        state: userId,
+        state: oauthState,
       });
-      return new Response(JSON.stringify({ url: `https://accounts.google.com/o/oauth2/v2/auth?${params}` }), {
+      return new Response(JSON.stringify({ url: `https://accounts.google.com/o/oauth2/v2/auth?${params}`, state: oauthState, user_id: userId }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     // Exchange code for tokens
     if (action === "exchange_code") {
+      if (typeof state !== 'string' || !/^[0-9a-f]{64}$/.test(state) || typeof code !== 'string' || !code.trim() || code.length > 4096) return fail(400);
+      const attempts = createClient(SUPABASE_URL, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+      const { data: consumed, error: consumeError } = await attempts.rpc('consume_google_calendar_oauth_attempt', { p_state_hash: await stateHash(state), p_user_id: userId, p_redirect_uri: redirect_uri });
+      if (consumeError) return fail(503);
+      if (consumed !== true) return fail(400);
       const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -74,12 +89,14 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ error: "Falha na autenticação com Google" }), { status: 400, headers: corsHeaders });
       }
 
+      if (typeof tokenData.access_token !== 'string' || !tokenData.access_token || typeof tokenData.refresh_token !== 'string' || !tokenData.refresh_token || !Number.isFinite(tokenData.expires_in) || tokenData.expires_in <= 0 || tokenData.expires_in > 86400) return fail(502);
       // Get user email
       const userInfoRes = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
         headers: { Authorization: `Bearer ${tokenData.access_token}` },
       });
       const userInfo = await userInfoRes.json();
 
+      if (!userInfoRes.ok || typeof userInfo.email !== 'string' || !userInfo.email.includes('@') || userInfo.verified_email !== true) return fail(502);
       const expiresAt = new Date(Date.now() + tokenData.expires_in * 1000).toISOString();
       const serviceClient = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
@@ -145,3 +162,5 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ error: "Erro interno na integração com Google Agenda" }), { status: 500, headers: corsHeaders });
   }
 });
+
+

@@ -1,8 +1,9 @@
 const fs = require('node:fs');
 const vm = require('node:vm');
 const assert = require('node:assert/strict');
-const source = fs.readFileSync(__dirname + '/../supabase/functions/google-calendar-auth/index.ts', 'utf8')
-  .replace(/^import .*;\r?\n/gm, '').replace(/\)!;/g, ');').replace(/\)!\)/g, '))');
+const ts = require('typescript');
+const source = ts.transpile(fs.readFileSync(__dirname + '/../supabase/functions/google-calendar-auth/index.ts', 'utf8')
+  .replace(/^import .*;\r?\n/gm, '').replace(/\)!;/g, ');').replace(/\)!\)/g, '))'), {target: ts.ScriptTarget.ES2022});
 async function run(action, result, paused = false) {
   let handler;
   let reads = 0;
@@ -33,7 +34,7 @@ async function run(action, result, paused = false) {
   r = await run('disconnect', { error: null });
   assert.equal(r.body.success, true);
   r = await run('exchange_code', {});
-  assert.equal(r.status, 500); assert.ok(!JSON.stringify(r).includes('synthetic-sensitive-detail'));
+  assert.equal(r.status, 400); assert.ok(!JSON.stringify(r).includes('synthetic-sensitive-detail'));
   r = await run('disconnect', {}, true);
   assert.equal(r.status, 503); assert.equal(r.reads, 0);
   console.log('7 synthetic scenarios passed; no network, tokens or real records used.');
