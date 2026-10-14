@@ -62,7 +62,7 @@ export function GoogleCalendarSettings() {
     const code = url.searchParams.get("code");
     const state = url.searchParams.get("state");
     if (code && state) {
-      handleOAuthCallback(code);
+      handleOAuthCallback(code, state);
       // Clean URL
       url.searchParams.delete("code");
       url.searchParams.delete("state");
@@ -85,7 +85,10 @@ export function GoogleCalendarSettings() {
         return;
       }
 
-      window.location.href = data.url;
+      const target = new URL(data.url);
+      if (target.origin !== 'https://accounts.google.com' || target.pathname !== '/o/oauth2/v2/auth' || !/^[0-9a-f]{64}$/.test(data.state) || target.searchParams.get('state') !== data.state || typeof data.user_id !== 'string') throw new Error('Invalid OAuth response');
+      sessionStorage.setItem('psicoone:calendar-oauth', JSON.stringify({ state: data.state, user: data.user_id, redirect: redirectUri, expires: Date.now() + 600000 }));
+      window.location.href = target.href;
     } catch (err) {
       toast.error("Erro ao conectar com Google");
     } finally {
@@ -93,12 +96,18 @@ export function GoogleCalendarSettings() {
     }
   };
 
-  const handleOAuthCallback = async (code: string) => {
+  const handleOAuthCallback = async (code: string, state: string) => {
     setConnecting(true);
     try {
       const redirectUri = `${window.location.origin}/configuracoes`;
+      const pending = sessionStorage.getItem('psicoone:calendar-oauth');
+      sessionStorage.removeItem('psicoone:calendar-oauth');
+      if (!pending) throw new Error('Missing OAuth attempt');
+      const attempt = JSON.parse(pending);
+      const { data: identity, error: identityError } = await supabase.auth.getUser();
+      if (identityError || !identity.user || attempt.user !== identity.user.id || attempt.state !== state || attempt.redirect !== redirectUri || !Number.isFinite(attempt.expires) || attempt.expires <= Date.now()) throw new Error('Invalid OAuth attempt');
       const { data, error } = await supabase.functions.invoke("google-calendar-auth", {
-        body: { action: "exchange_code", code, redirect_uri: redirectUri },
+        body: { action: "exchange_code", code, state, redirect_uri: redirectUri },
       });
 
       if (error || !data?.success) {
@@ -330,3 +339,4 @@ export function GoogleCalendarSettings() {
     </Card>
   );
 }
+
