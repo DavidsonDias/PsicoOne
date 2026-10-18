@@ -74,7 +74,7 @@ async function getValidAccessToken(serviceClient: any, userId: string): Promise<
 
   const refreshData = await refreshRes.json();
   if (!refreshRes.ok) {
-    console.error("Token refresh failed:", refreshData);
+    console.error("Token refresh failed");
     return null;
   }
 
@@ -120,14 +120,30 @@ Deno.serve(async (req) => {
     const userId = user.id;
 
     const serviceClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    const body = await req.json();
+    const action = body?.action;
+    if (!["create", "update", "cancel", "delete", "sync_all"].includes(action)) return json({ error: "Invalid action" }, 400);
+    let appointment: any;
+    if (action !== "sync_all") {
+      const id = body?.appointment?.id;
+      if (typeof id !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return json({ error: "Agendamento inválido" }, 400);
+      const { data: owned, error: ownedError } = await supabase.from("appointments")
+        .select("id, scheduled_at, duration_minutes, type, notes, status, deleted_at, google_event_id, patients(full_name)")
+        .eq("id", id).eq("psychologist_id", userId).maybeSingle();
+      if (ownedError) return json({ error: "Não foi possível consultar o agendamento" }, 503);
+      if (!owned) return json({ error: "Agendamento não encontrado" }, 404);
+      if ((action === "create" || action === "update") && (owned.deleted_at || owned.status === "cancelled")) return json({ error: "Agendamento indisponível" }, 409);
+      appointment = { ...owned, patient_name: owned.patients?.full_name || "Paciente" };
+    }
 
     // Check sync preferences
-    const { data: prefs } = await serviceClient
+    const { data: prefs, error: prefsError } = await serviceClient
       .from("google_calendar_tokens")
       .select("sync_enabled, auto_create, auto_update, sync_new_only, calendar_id")
       .eq("user_id", userId)
       .single();
 
+    if (prefsError) return json({ error: "Não foi possível consultar preferências" }, 503);
     if (!prefs?.sync_enabled) {
       return new Response(JSON.stringify({ skipped: true, reason: "sync_disabled" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -142,8 +158,6 @@ Deno.serve(async (req) => {
     }
 
     const calendarId = prefs.calendar_id || "primary";
-    const body = await req.json();
-    const { action, appointment } = body;
 
     const CALENDAR_API = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`;
 
@@ -168,15 +182,15 @@ Deno.serve(async (req) => {
 
       const eventData = await res.json();
       if (!res.ok) {
-        console.error("Google Calendar create failed:", eventData);
-        return json({ error: "Falha ao criar evento no Google Calendar", details: eventData }, res.status);
+        console.error("Google Calendar create failed");
+        return json({ error: "Falha ao criar evento no Google Calendar" }, res.status);
       }
 
       // Save google_event_id
       await serviceClient
         .from("appointments")
         .update({ google_event_id: eventData.id })
-        .eq("id", appointment.id);
+        .eq("id", appointment.id).eq("psychologist_id", userId);
 
       return new Response(JSON.stringify({ success: true, google_event_id: eventData.id }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -193,7 +207,7 @@ Deno.serve(async (req) => {
 
       const event = buildEvent(appointment, appointment.patient_name || "Paciente");
 
-      const res = await fetch(`${CALENDAR_API}/${appointment.google_event_id}`, {
+      const res = await fetch(`${CALENDAR_API}/${encodeURIComponent(appointment.google_event_id)}`, {
         method: "PUT",
         headers: {
           Authorization: `Bearer ${accessToken}`,
@@ -204,8 +218,8 @@ Deno.serve(async (req) => {
 
       if (!res.ok) {
         const errData = await res.json();
-        console.error("Google Calendar update failed:", errData);
-        return json({ error: "Falha ao atualizar evento", details: errData }, res.status);
+        console.error("Google Calendar update failed");
+        return json({ error: "Falha ao atualizar evento" }, res.status);
       }
 
       return new Response(JSON.stringify({ success: true }), {
@@ -221,13 +235,13 @@ Deno.serve(async (req) => {
         });
       }
 
-      const res = await fetch(`${CALENDAR_API}/${appointment.google_event_id}`, {
+      const res = await fetch(`${CALENDAR_API}/${encodeURIComponent(appointment.google_event_id)}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${accessToken}` },
       });
 
       if (!res.ok && res.status !== 404) {
-        console.error("Google Calendar delete failed:", res.status);
+        return json({ error: "Falha ao remover evento" }, 502);
       }
 
       return new Response(JSON.stringify({ success: true }), {
@@ -331,8 +345,8 @@ Deno.serve(async (req) => {
 
     return new Response(JSON.stringify({ error: "Invalid action" }), { status: 400, headers: corsHeaders });
   } catch (err) {
-    console.error("Sync error:", err);
-    const message = err instanceof Error ? err.message : "Erro inesperado de sincronização";
+    console.error("Calendar synchronization failed");
+    const message = "Erro inesperado de sincronização";
     return json({ error: message }, 500);
   }
 });
