@@ -29,6 +29,7 @@ interface CalendarSyncResult {
 
 export function GoogleCalendarSettings() {
   const [prefs, setPrefs] = useState<GoogleCalendarPrefs>({ connected: false });
+  const [statusError, setStatusError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [connecting, setConnecting] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
@@ -36,19 +37,20 @@ export function GoogleCalendarSettings() {
   const [updatingPrefs, setUpdatingPrefs] = useState(false);
 
   const loadStatus = useCallback(async () => {
+    setLoading(true);
+    setStatusError(null);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
+      if (!session) throw new Error("Session unavailable");
 
       const { data, error } = await supabase.functions.invoke("google-calendar-auth", {
         body: { action: "status" },
       });
 
-      if (!error && data) {
-        setPrefs(data);
-      }
+      if (error || !data || typeof data.connected !== "boolean") throw new Error("Status unavailable");
+      setPrefs(data);
     } catch (err) {
-      console.error("Error loading Google Calendar status:", err);
+      setStatusError("Não foi possível verificar o Google Agenda. A integração pode estar temporariamente indisponível. Tente novamente em instantes.");
     } finally {
       setLoading(false);
     }
@@ -147,11 +149,10 @@ export function GoogleCalendarSettings() {
 
   const handleUpdatePrefs = async (key: string, value: boolean) => {
     const newPrefs = { ...prefs, [key]: value };
-    setPrefs(newPrefs);
     setUpdatingPrefs(true);
 
     try {
-      await supabase.functions.invoke("google-calendar-auth", {
+      const { data, error } = await supabase.functions.invoke("google-calendar-auth", {
         body: {
           action: "update_preferences",
           sync_enabled: newPrefs.sync_enabled,
@@ -160,6 +161,8 @@ export function GoogleCalendarSettings() {
           sync_new_only: newPrefs.sync_new_only,
         },
       });
+      if (error || data?.success !== true) throw new Error("Preferences not saved");
+      setPrefs(newPrefs);
     } catch (err) {
       toast.error("Erro ao atualizar preferências");
     } finally {
@@ -223,7 +226,7 @@ export function GoogleCalendarSettings() {
             <CardTitle className="text-lg">Google Calendar</CardTitle>
             <CardDescription>Sincronize seus agendamentos com o Google Agenda</CardDescription>
           </div>
-          {prefs.connected && (
+          {!statusError && prefs.connected && (
             <Badge variant="default" className="gap-1">
               <CheckCircle2 className="h-3 w-3" />
               Conectado
@@ -233,7 +236,12 @@ export function GoogleCalendarSettings() {
       </CardHeader>
 
       <CardContent className="space-y-6">
-        {!prefs.connected ? (
+        {statusError ? (
+          <div role="alert" className="space-y-3">
+            <p className="text-sm text-muted-foreground">{statusError}</p>
+            <Button variant="outline" onClick={loadStatus}>Tentar novamente</Button>
+          </div>
+        ) : !prefs.connected ? (
           <div className="text-center py-6 space-y-4">
             <div className="h-16 w-16 mx-auto rounded-full bg-muted flex items-center justify-center">
               <Calendar className="h-8 w-8 text-muted-foreground" />
@@ -282,6 +290,7 @@ export function GoogleCalendarSettings() {
                   <p className="text-xs text-muted-foreground">Ativar sincronização com Google Calendar</p>
                 </div>
                 <Switch
+                  disabled={updatingPrefs}
                   checked={prefs.sync_enabled ?? true}
                   onCheckedChange={(v) => handleUpdatePrefs("sync_enabled", v)}
                 />
@@ -293,6 +302,7 @@ export function GoogleCalendarSettings() {
                   <p className="text-xs text-muted-foreground">Novos agendamentos criam evento no Google</p>
                 </div>
                 <Switch
+                  disabled={updatingPrefs}
                   checked={prefs.auto_create ?? true}
                   onCheckedChange={(v) => handleUpdatePrefs("auto_create", v)}
                 />
@@ -304,6 +314,7 @@ export function GoogleCalendarSettings() {
                   <p className="text-xs text-muted-foreground">Alterações são refletidas no Google</p>
                 </div>
                 <Switch
+                  disabled={updatingPrefs}
                   checked={prefs.auto_update ?? true}
                   onCheckedChange={(v) => handleUpdatePrefs("auto_update", v)}
                 />
@@ -315,6 +326,7 @@ export function GoogleCalendarSettings() {
                   <p className="text-xs text-muted-foreground">Não sincronizar agendamentos passados</p>
                 </div>
                 <Switch
+                  disabled={updatingPrefs}
                   checked={prefs.sync_new_only ?? false}
                   onCheckedChange={(v) => handleUpdatePrefs("sync_new_only", v)}
                 />
