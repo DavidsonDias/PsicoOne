@@ -73,6 +73,7 @@ Deno.serve(async (req) => {
       if (consumed !== true) return fail(400);
       const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
         method: "POST",
+        signal: AbortSignal.timeout(15000),
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: new URLSearchParams({
           code,
@@ -90,8 +91,11 @@ Deno.serve(async (req) => {
       }
 
       if (typeof tokenData.access_token !== 'string' || !tokenData.access_token || typeof tokenData.refresh_token !== 'string' || !tokenData.refresh_token || !Number.isFinite(tokenData.expires_in) || tokenData.expires_in <= 0 || tokenData.expires_in > 86400) return fail(502);
+      const grantedScopes = new Set(typeof tokenData.scope === "string" ? tokenData.scope.split(/\s+/) : []);
+      if (!grantedScopes.has("https://www.googleapis.com/auth/calendar") || !grantedScopes.has("https://www.googleapis.com/auth/userinfo.email")) return fail(403);
       // Get user email
       const userInfoRes = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
+        signal: AbortSignal.timeout(15000),
         headers: { Authorization: `Bearer ${tokenData.access_token}` },
       });
       const userInfo = await userInfoRes.json();
@@ -145,14 +149,18 @@ Deno.serve(async (req) => {
 
     // Update preferences
     if (action === "update_preferences") {
-      const { error } = await supabase
+      if ([sync_enabled, auto_create, auto_update, sync_new_only].some(value => typeof value !== "boolean")) return fail(400);
+      const { data: updated, error } = await supabase
         .from("google_calendar_tokens")
         .update({ sync_enabled, auto_create, auto_update, sync_new_only, updated_at: new Date().toISOString() })
-        .eq("user_id", userId);
+        .eq("user_id", userId)
+        .select("user_id")
+        .maybeSingle();
 
       if (error) {
         return new Response(JSON.stringify({ error: "Erro ao atualizar preferências" }), { status: 500, headers: corsHeaders });
       }
+      if (!updated) return new Response(JSON.stringify({ error: "Conecte sua conta Google antes de alterar as preferências" }), { status: 409, headers: corsHeaders });
       return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
@@ -162,5 +170,7 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ error: "Erro interno na integração com Google Agenda" }), { status: 500, headers: corsHeaders });
   }
 });
+
+
 
 
