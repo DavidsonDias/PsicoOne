@@ -15,13 +15,11 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 
 Deno.serve(async (req) => {
-  const migrationPause = unvalidatedIntegrationResponse(req);
-  if (migrationPause) return migrationPause;
-
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+    return new Response(null, { status: 204, headers: corsHeaders });
   }
 
+  if (req.method !== "POST") return fail(405);
   try {
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
@@ -37,12 +35,19 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
     }
     const userId = user.id;
+    // Time-limited, reviewed connection test. Event synchronization remains paused.
+    if (SUPABASE_URL !== "https://jeguvjpfuyksqiqrrvyz.supabase.co" ||
+        Date.now() >= Date.parse("2026-10-20T09:30:00Z") ||
+        await stateHash(userId) !== "22ed549770256ec3622d65f18479d82a0e09b4349879f7f661473453fed8b250") {
+      return unvalidatedIntegrationResponse(req)!;
+    }
 
     const body = await req.json();
     const { action, code, state, redirect_uri, sync_enabled, auto_create, auto_update, sync_new_only } = body;
 
+    if (!["status", "get_auth_url", "exchange_code", "disconnect"].includes(action)) return unvalidatedIntegrationResponse(req)!;
     if (action === 'get_auth_url' || action === 'exchange_code') {
-      if (typeof redirect_uri !== 'string' || !allowedReturns.has(redirect_uri)) return fail(400);
+      if (typeof redirect_uri !== 'string' || redirect_uri !== 'https://psicoonex.vercel.app/configuracoes') return fail(400);
     }
     // Generate OAuth URL
     if (action === "get_auth_url") {
@@ -101,6 +106,7 @@ Deno.serve(async (req) => {
       const userInfo = await userInfoRes.json();
 
       if (!userInfoRes.ok || typeof userInfo.email !== 'string' || !userInfo.email.includes('@') || userInfo.verified_email !== true) return fail(502);
+      if (await stateHash(userInfo.email.trim().toLowerCase()) !== "970d02b0923c8fcb887a0fb2247927a6d75c53bff35f28246969034795429f49") return fail(403);
       const expiresAt = new Date(Date.now() + tokenData.expires_in * 1000).toISOString();
       const serviceClient = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
@@ -112,6 +118,10 @@ Deno.serve(async (req) => {
           refresh_token: tokenData.refresh_token,
           token_expires_at: expiresAt,
           google_email: userInfo.email,
+          sync_enabled: false,
+          auto_create: false,
+          auto_update: false,
+          sync_new_only: true,
           updated_at: new Date().toISOString(),
         }, { onConflict: "user_id" });
 
@@ -142,7 +152,7 @@ Deno.serve(async (req) => {
         .maybeSingle();
       if (statusError) return new Response(JSON.stringify({ error: "Não foi possível consultar a conexão com Google Agenda" }), { status: 503, headers: corsHeaders });
 
-      return new Response(JSON.stringify({ connected: !!data, ...(data || {}) }), {
+      return new Response(JSON.stringify({ connected: !!data, ...(data || {}), migration_test: true, sync_enabled: false, auto_create: false, auto_update: false }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }

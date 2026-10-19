@@ -11,6 +11,7 @@ import { Calendar, Link2, Unlink, RefreshCw, Loader2, CheckCircle2, Mail } from 
 
 interface GoogleCalendarPrefs {
   connected: boolean;
+  migration_test?: boolean;
   google_email?: string;
   sync_enabled?: boolean;
   auto_create?: boolean;
@@ -236,6 +237,7 @@ export function GoogleCalendarSettings() {
       </CardHeader>
 
       <CardContent className="space-y-6">
+        {prefs.migration_test && <p role="status" className="text-sm text-muted-foreground">Teste de conexão Google. O envio de consultas está desativado.</p>}
         {statusError ? (
           <div role="alert" className="space-y-3">
             <p className="text-sm text-muted-foreground">{statusError}</p>
@@ -278,6 +280,7 @@ export function GoogleCalendarSettings() {
               </Button>
             </div>
 
+            {!prefs.migration_test && <>
             <Separator />
 
             {/* Sync preferences */}
@@ -345,6 +348,7 @@ export function GoogleCalendarSettings() {
               {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
               {syncing ? "Sincronizando..." : "Sincronizar Agenda Agora"}
             </Button>
+            </>}
           </>
         )}
       </CardContent>
