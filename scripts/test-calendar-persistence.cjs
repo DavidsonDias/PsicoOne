@@ -7,7 +7,7 @@ async function run(o={}){
  const client={auth:{getUser:async()=>({data:{user:{id:'owner'}}})},from(table){
   let write=false;const chain=new Proxy({}, {get:(_,k)=>k==='then'?resolve=>resolve(write?{data:o.saveMissing?null:{id:row.id,user_id:'owner'},error:o.saveError?{message:'private'}:null}:{data:table==='appointments'?(o.all?[row]:row):{sync_enabled:true,auto_create:true,auto_update:true,access_token:'synthetic',refresh_token:'synthetic',token_expires_at:o.refresh?'2000-01-01':'2099-01-01'}}):()=>{if(k==='update')write=true;return chain;}});return chain;
  }};
- vm.runInNewContext(source,{Deno:{env:{get:()=> 'synthetic'},serve:fn=>handler=fn},createClient:()=>client,unvalidatedIntegrationResponse:()=>o.paused?new Response('{}',{status:503}):null,Response,Date,URLSearchParams,AbortSignal,encodeURIComponent,console:{error:()=>{},log:()=>{}},fetch:async(url)=>{calls.push(url);return new Response(JSON.stringify(url.includes('oauth2')?(o.invalidToken?{}:{access_token:'renewed',expires_in:3600}):(o.invalidEvent?{}:{id:'synthetic-event'})));}});
+ vm.runInNewContext(source,{Deno:{env:{get:()=> 'synthetic'},serve:fn=>handler=fn},createClient:()=>client,unvalidatedIntegrationResponse:()=>o.paused?new Response('{}',{status:503}):null,Response,Date,URLSearchParams,AbortSignal,TextEncoder,Uint8Array,crypto:require("crypto").webcrypto,encodeURIComponent,console:{error:()=>{},log:()=>{}},fetch:async(url,init)=>{calls.push(url);return new Response(JSON.stringify(url.includes('oauth2')?(o.invalidToken?{}:{access_token:'renewed',expires_in:3600}):(o.invalidEvent?{}:{id:JSON.parse(init.body).id})));}});
  const res=await handler(new Request('https://example.test',{method:'POST',headers:{Authorization:'Bearer synthetic'},body:JSON.stringify({action:o.all?'sync_all':'create',appointment:{id:row.id}})}));return {status:res.status,body:await res.json(),calls};
 }
 (async()=>{
@@ -20,4 +20,3 @@ async function run(o={}){
  r=await run({paused:true});assert.equal(r.status,503);assert.equal(r.calls.length,0);
  console.log('10 persistence scenarios passed; no real data or provider calls.');
 })().catch(e=>{console.error(e);process.exitCode=1;});
-

@@ -44,6 +44,25 @@ function buildEvent(appointment: CalendarAppointment, patientName: string) {
   };
 }
 
+
+async function createOrRecoverEvent(api: string, accessToken: string, userId: string, appointmentId: string, event: ReturnType<typeof buildEvent>) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify([SUPABASE_URL, userId, appointmentId])));
+  const id = Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, "0")).join("");
+  const headers = { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" };
+  const created = await fetch(api, { method: "POST", headers, signal: AbortSignal.timeout(15000), body: JSON.stringify({ ...event, id }) });
+  if (created.ok) {
+    const data = await created.json();
+    return data.id === id ? { id, status: 200 } : { id: null, status: 502 };
+  }
+  if (created.status !== 409) return { id: null, status: created.status };
+  // A retry may find an event created before its database link was saved.
+  const existing = await fetch(`${api}/${id}`, { headers, signal: AbortSignal.timeout(15000) });
+  if (!existing.ok) return { id: null, status: 502 };
+  const data = await existing.json();
+  if (data.id !== id || data.status === "cancelled" || data.extendedProperties?.private?.psicooneAppointmentId !== appointmentId) return { id: null, status: 409 };
+  return { id, status: 200 };
+}
+
 async function getValidAccessToken(serviceClient: any, userId: string): Promise<string | null> {
   if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) return null;
   const { data: tokenData, error: tokenError } = await serviceClient
@@ -175,22 +194,10 @@ Deno.serve(async (req) => {
         });
       }
 
+      if (appointment.google_event_id) return json({ skipped: true, reason: "already_linked" });
       const event = buildEvent(appointment, appointment.patient_name || "Paciente");
-
-      const res = await fetch(CALENDAR_API, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(event),
-      });
-
-      const eventData = await res.json();
-      if (!res.ok) {
-        console.error("Google Calendar create failed");
-        return json({ error: "Falha ao criar evento no Google Calendar" }, res.status);
-      }
+      const eventData = await createOrRecoverEvent(CALENDAR_API, accessToken, userId, appointment.id, event);
+      if (!eventData.id) return json({ error: "Não foi possível criar ou reconciliar evento" }, eventData.status);
 
       // Save google_event_id
       if (typeof eventData.id !== "string" || !eventData.id) return json({ error: "Resposta inválida do Google Calendar" }, 502);
@@ -318,20 +325,12 @@ Deno.serve(async (req) => {
           wasMissing = true;
         }
 
-        const createRes = await fetch(CALENDAR_API, {
-          method: "POST",
-          headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
-          body: JSON.stringify(event),
-        });
-
-        if (!createRes.ok) {
-          const details = await createRes.text();
+        const eventData = await createOrRecoverEvent(CALENDAR_API, accessToken, userId, apt.id, event);
+        if (!eventData.id) {
           result.failed++;
-          failures.push({ appointment_id: apt.id, status: createRes.status, message: details.slice(0, 300) });
+          failures.push({ appointment_id: apt.id, status: eventData.status, message: "Não foi possível criar ou reconciliar evento" });
           continue;
         }
-
-        const eventData = await createRes.json();
         if (typeof eventData.id !== "string" || !eventData.id) {
           result.failed++;
           failures.push({ appointment_id: apt.id, status: 502, message: "Resposta inválida do Google Calendar" });
