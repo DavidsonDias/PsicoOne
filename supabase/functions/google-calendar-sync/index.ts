@@ -46,13 +46,13 @@ function buildEvent(appointment: CalendarAppointment, patientName: string) {
 
 async function getValidAccessToken(serviceClient: any, userId: string): Promise<string | null> {
   if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) return null;
-  const { data: tokenData } = await serviceClient
+  const { data: tokenData, error: tokenError } = await serviceClient
     .from("google_calendar_tokens")
     .select("*")
     .eq("user_id", userId)
     .single();
 
-  if (!tokenData) return null;
+  if (tokenError || !tokenData || typeof tokenData.access_token !== "string" || !tokenData.access_token) return null;
 
   // Check if token is expired (with 5 min buffer)
   const expiresAt = new Date(tokenData.token_expires_at);
@@ -61,8 +61,10 @@ async function getValidAccessToken(serviceClient: any, userId: string): Promise<
   }
 
   // Refresh token
+  if (typeof tokenData.refresh_token !== "string" || !tokenData.refresh_token) return null;
   const refreshRes = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
+    signal: AbortSignal.timeout(15000),
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       client_id: GOOGLE_CLIENT_ID,
@@ -73,20 +75,24 @@ async function getValidAccessToken(serviceClient: any, userId: string): Promise<
   });
 
   const refreshData = await refreshRes.json();
-  if (!refreshRes.ok) {
+  if (!refreshRes.ok || typeof refreshData.access_token !== "string" || !refreshData.access_token || !Number.isFinite(refreshData.expires_in) || refreshData.expires_in <= 0 || refreshData.expires_in > 86400) {
     console.error("Token refresh failed");
     return null;
   }
 
   const newExpiresAt = new Date(Date.now() + refreshData.expires_in * 1000).toISOString();
-  await serviceClient
+  const { data: savedToken, error: saveError } = await serviceClient
     .from("google_calendar_tokens")
     .update({
       access_token: refreshData.access_token,
       token_expires_at: newExpiresAt,
       updated_at: new Date().toISOString(),
     })
-    .eq("user_id", userId);
+    .eq("user_id", userId)
+    .select("user_id")
+    .maybeSingle();
+
+  if (saveError || !savedToken) return null;
 
   return refreshData.access_token;
 }
@@ -187,10 +193,14 @@ Deno.serve(async (req) => {
       }
 
       // Save google_event_id
-      await serviceClient
+      if (typeof eventData.id !== "string" || !eventData.id) return json({ error: "Resposta inválida do Google Calendar" }, 502);
+      const { data: linked, error: linkError } = await serviceClient
         .from("appointments")
         .update({ google_event_id: eventData.id })
-        .eq("id", appointment.id).eq("psychologist_id", userId);
+        .eq("id", appointment.id).eq("psychologist_id", userId)
+        .select("id").maybeSingle();
+
+      if (linkError || !linked) return json({ error: "Evento criado, mas o vínculo não foi salvo. Reconciliação necessária.", reconciliation_required: true }, 503);
 
       return new Response(JSON.stringify({ success: true, google_event_id: eventData.id }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -322,15 +332,21 @@ Deno.serve(async (req) => {
         }
 
         const eventData = await createRes.json();
-        const { error: linkError } = await serviceClient
+        if (typeof eventData.id !== "string" || !eventData.id) {
+          result.failed++;
+          failures.push({ appointment_id: apt.id, status: 502, message: "Resposta inválida do Google Calendar" });
+          continue;
+        }
+        const { data: linked, error: linkError } = await serviceClient
           .from("appointments")
           .update({ google_event_id: eventData.id })
           .eq("id", apt.id)
-          .eq("psychologist_id", userId);
+          .eq("psychologist_id", userId)
+          .select("id").maybeSingle();
 
-        if (linkError) {
+        if (linkError || !linked) {
           result.failed++;
-          failures.push({ appointment_id: apt.id, status: 500, message: linkError.message });
+          failures.push({ appointment_id: apt.id, status: 503, message: "Evento criado, mas o vínculo não foi salvo. Reconciliação necessária." });
           continue;
         }
 
