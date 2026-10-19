@@ -17,9 +17,7 @@ type CalendarAppointment = {
   scheduled_at: string;
   duration_minutes: number | null;
   type: string | null;
-  notes: string | null;
   google_event_id: string | null;
-  patients: { full_name?: string | null } | null;
 };
 
 function json(body: unknown, status = 200) {
@@ -29,14 +27,14 @@ function json(body: unknown, status = 200) {
   });
 }
 
-function buildEvent(appointment: CalendarAppointment, patientName: string) {
+function buildEvent(appointment: CalendarAppointment) {
   const startTime = new Date(appointment.scheduled_at);
   const duration = appointment.duration_minutes || 50;
   const endTime = new Date(startTime.getTime() + duration * 60000);
 
   return {
-    summary: `Consulta — ${patientName}`,
-    description: `Sessão agendada pelo sistema PsicoOne.\n\nTipo: ${appointment.type === "online" ? "Online" : "Presencial"}\nDuração: ${duration} minutos${appointment.notes ? `\nObservações: ${appointment.notes}` : ""}`,
+    summary: "Compromisso — PsicoOne",
+    description: "Agendamento gerenciado pelo PsicoOne.",
     start: { dateTime: startTime.toISOString(), timeZone: "America/Sao_Paulo" },
     end: { dateTime: endTime.toISOString(), timeZone: "America/Sao_Paulo" },
     reminders: { useDefault: true },
@@ -153,12 +151,12 @@ Deno.serve(async (req) => {
       const id = body?.appointment?.id;
       if (typeof id !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return json({ error: "Agendamento inválido" }, 400);
       const { data: owned, error: ownedError } = await supabase.from("appointments")
-        .select("id, scheduled_at, duration_minutes, type, notes, status, deleted_at, google_event_id, patients(full_name)")
+        .select("id, scheduled_at, duration_minutes, type, status, deleted_at, google_event_id")
         .eq("id", id).eq("psychologist_id", userId).maybeSingle();
       if (ownedError) return json({ error: "Não foi possível consultar o agendamento" }, 503);
       if (!owned) return json({ error: "Agendamento não encontrado" }, 404);
       if ((action === "create" || action === "update") && (owned.deleted_at || owned.status === "cancelled")) return json({ error: "Agendamento indisponível" }, 409);
-      appointment = { ...owned, patient_name: owned.patients?.full_name || "Paciente" };
+      appointment = owned;
     }
 
     // Check sync preferences
@@ -195,7 +193,7 @@ Deno.serve(async (req) => {
       }
 
       if (appointment.google_event_id) return json({ skipped: true, reason: "already_linked" });
-      const event = buildEvent(appointment, appointment.patient_name || "Paciente");
+      const event = buildEvent(appointment);
       const eventData = await createOrRecoverEvent(CALENDAR_API, accessToken, userId, appointment.id, event);
       if (!eventData.id) return json({ error: "Não foi possível criar ou reconciliar evento" }, eventData.status);
 
@@ -222,7 +220,7 @@ Deno.serve(async (req) => {
         });
       }
 
-      const event = buildEvent(appointment, appointment.patient_name || "Paciente");
+      const event = buildEvent(appointment);
 
       const res = await fetch(`${CALENDAR_API}/${encodeURIComponent(appointment.google_event_id)}`, {
         method: "PUT",
@@ -272,7 +270,7 @@ Deno.serve(async (req) => {
     if (action === "sync_all") {
       let query = serviceClient
         .from("appointments")
-        .select("id, scheduled_at, duration_minutes, type, notes, status, google_event_id, patient_id, patients(full_name)")
+        .select("id, scheduled_at, duration_minutes, type, status, google_event_id")
         .eq("psychologist_id", userId)
         .is("deleted_at", null)
         .neq("status", "cancelled")
@@ -297,8 +295,7 @@ Deno.serve(async (req) => {
 
       for (const rawAppointment of appointments) {
         const apt = rawAppointment as CalendarAppointment;
-        const patientName = apt.patients?.full_name || "Paciente";
-        const event = buildEvent(apt, patientName);
+        const event = buildEvent(apt);
         let eventId = apt.google_event_id;
         let wasMissing = false;
 

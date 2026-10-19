@@ -1,0 +1,11 @@
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict'),ts=require('typescript');
+const raw=fs.readFileSync('supabase/functions/google-calendar-sync/index.ts','utf8');
+const ctx={Deno:{env:{get:()=>''},serve:()=>{}},Date};
+vm.runInNewContext(ts.transpile(raw.replace(/^import .*;\r?\n/gm,''),{target:ts.ScriptTarget.ES2022}),ctx);
+const event=ctx.buildEvent({id:'synthetic',scheduled_at:'2026-12-01T12:00:00Z',duration_minutes:50,type:'online',notes:'PRIVATE_NOTE',patients:{full_name:'PRIVATE_NAME'}});
+assert.ok(!JSON.stringify(event).includes('PRIVATE_'));
+assert.equal(event.summary,'Compromisso — PsicoOne');
+assert.equal(event.end.dateTime,'2026-12-01T12:50:00.000Z');
+assert.equal(event.start.timeZone,'America/Sao_Paulo');
+assert.ok(!raw.includes('patients(full_name)'));
+console.log('Calendar payload excludes names and notes; schedule preserved.');
