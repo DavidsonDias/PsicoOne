@@ -113,13 +113,13 @@ async function getValidAccessToken(serviceClient: any, userId: string): Promise<
   return refreshData.access_token;
 }
 
-const TEST_MARKER = "migration-check-2026-10-19-v1";
+const TEST_MARKER = "migration-check-2026-10-20-v2";
 const digest = async (value: string) => Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value))), b => b.toString(16).padStart(2, "0")).join("");
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "POST required" }, 405);
-  if (SUPABASE_URL !== "https://jeguvjpfuyksqiqrrvyz.supabase.co" || Date.now() >= Date.parse("2026-10-20T09:30:00Z")) return json({ error: "Test closed" }, 403);
+  if (SUPABASE_URL !== "https://jeguvjpfuyksqiqrrvyz.supabase.co" || Date.now() >= Date.parse("2026-10-20T16:00:00Z")) return json({ error: "Test closed" }, 403);
   const authorization = req.headers.get("Authorization");
   if (!authorization?.startsWith("Bearer ")) return json({ error: "Unauthorized" }, 401);
   try {
@@ -135,7 +135,7 @@ Deno.serve(async (req) => {
     const token = await getValidAccessToken(service, user.id);
     if (!token) return json({ error: "Reconnect Google" }, 401);
     // Fixed payload: request bodies cannot select a patient, event, calendar or time.
-    const appointment = { id: TEST_MARKER, scheduled_at: "2026-10-20T09:00:00Z", duration_minutes: 5, type: null, google_event_id: null };
+    const appointment = { id: TEST_MARKER, scheduled_at: "2026-10-20T15:30:00Z", duration_minutes: 5, type: null, google_event_id: null };
     const event = { ...buildEvent(appointment), summary: "TESTE PSICOONE — SEM PACIENTE", description: "Validação técnica da migração. Evento fictício." };
     const api = "https://www.googleapis.com/calendar/v3/calendars/primary/events";
     const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
@@ -150,7 +150,7 @@ Deno.serve(async (req) => {
       const before = await fetch(url, { headers, signal: AbortSignal.timeout(15000) });
       const record = await before.json();
       if (!before.ok || record.extendedProperties?.private?.psicooneAppointmentId !== TEST_MARKER || record.summary !== event.summary) throw new Error("Marker mismatch");
-      const end = { dateTime: "2026-10-20T09:06:00Z", timeZone: "America/Sao_Paulo" };
+      const end = { dateTime: "2026-10-20T15:36:00Z", timeZone: "America/Sao_Paulo" };
       const updated = await fetch(url, { method: "PATCH", headers, signal: AbortSignal.timeout(15000), body: JSON.stringify({ end }) });
       if (!updated.ok) throw new Error("Update failed");
       const read = await fetch(url, { headers, signal: AbortSignal.timeout(15000) });
