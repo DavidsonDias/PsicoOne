@@ -294,7 +294,7 @@ export function GoogleCalendarSettings() {
               </Button>
             </div>
 
-            {prefs.migration_test && Date.now() < Date.parse("2026-10-20T16:00:00Z") && (
+            {prefs.migration_test && Date.now() < Date.parse("2026-10-20T21:48:50.000Z") && (
               <div className="space-y-2">
                 <p className="text-sm">Teste autorizado: criar, conferir e remover um evento fictício, sem pacientes.</p>
                 <Button onClick={runMigrationTest} disabled={syncing || testResult !== null}>{syncing ? "Executando teste..." : "Executar teste fictício da agenda"}</Button>

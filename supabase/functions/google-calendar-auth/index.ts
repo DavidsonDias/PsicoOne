@@ -37,7 +37,7 @@ Deno.serve(async (req) => {
     const userId = user.id;
     // Time-limited, reviewed connection test. Event synchronization remains paused.
     if (SUPABASE_URL !== "https://jeguvjpfuyksqiqrrvyz.supabase.co" ||
-        Date.now() >= Date.parse("2026-10-20T16:00:00Z") ||
+        Date.now() >= Date.parse("2026-10-20T21:48:50.000Z") ||
         await stateHash(userId) !== "22ed549770256ec3622d65f18479d82a0e09b4349879f7f661473453fed8b250") {
       return unvalidatedIntegrationResponse(req)!;
     }
