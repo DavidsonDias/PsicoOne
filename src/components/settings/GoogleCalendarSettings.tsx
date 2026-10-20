@@ -35,7 +35,6 @@ export function GoogleCalendarSettings() {
   const [connecting, setConnecting] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const [testResult, setTestResult] = useState<string | null>(null);
   const [updatingPrefs, setUpdatingPrefs] = useState(false);
 
   const loadStatus = useCallback(async () => {
@@ -207,18 +206,6 @@ export function GoogleCalendarSettings() {
     }
   };
 
-  const runMigrationTest = async () => {
-    setSyncing(true);
-    setTestResult(null);
-    try {
-      const { data, error } = await supabase.functions.invoke("calendar-migration-test", { body: {} });
-      setTestResult(!error && data?.success === true && data?.cleaned === true
-        ? "Teste concluído: evento fictício criado, conferido e removido."
-        : "Teste não concluído. A remoção do evento precisa ser verificada antes de repetir.");
-    } catch {
-      setTestResult("Teste não concluído. A remoção do evento precisa ser verificada antes de repetir.");
-    } finally { setSyncing(false); }
-  };
 
   if (loading) {
     return (
@@ -294,13 +281,7 @@ export function GoogleCalendarSettings() {
               </Button>
             </div>
 
-            {prefs.migration_test && Date.now() < Date.parse("2026-10-20T21:48:50.000Z") && (
-              <div className="space-y-2">
-                <p className="text-sm">Teste autorizado: criar, conferir e remover um evento fictício, sem pacientes.</p>
-                <Button onClick={runMigrationTest} disabled={syncing || testResult !== null}>{syncing ? "Executando teste..." : "Executar teste fictício da agenda"}</Button>
-                {testResult && <p role="status">{testResult}</p>}
-              </div>
-            )}
+            {prefs.migration_test && <p className="text-sm">Teste técnico encerrado. O envio de consultas permanece desativado.</p>}
             {!prefs.migration_test && <>
             <Separator />
 
