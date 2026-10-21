@@ -7,7 +7,7 @@ import { TEMPLATES } from '../_shared/transactional-email-templates/registry.ts'
 const STAGING_URL = 'https://jeguvjpfuyksqiqrrvyz.supabase.co'
 
 const corsHeaders = {
-  'Access-Control-Allow-Origin': 'https://psicoonex.vercel.app',
+  'Access-Control-Allow-Origin': 'https://psicoone.vercel.app',
   'Access-Control-Allow-Headers':
     'authorization, x-client-info, apikey, content-type, x-email-worker-secret',
 }
@@ -146,7 +146,7 @@ Deno.serve(async (req) => {
     if (templateData[field] !== undefined && templateData[field] !== '') {
       try {
         const link = new URL(templateData[field])
-        if (link.origin !== 'https://psicoonex.vercel.app' || link.username || link.password) throw new Error()
+        if (link.origin !== 'https://psicoone.vercel.app' || link.username || link.password) throw new Error()
       } catch {
         return respond(400, { error: 'Template links must use the staging site', field })
       }

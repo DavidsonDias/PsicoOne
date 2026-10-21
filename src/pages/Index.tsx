@@ -22,13 +22,13 @@ const Index = () => {
           content="PsicoOne é a plataforma #1 para psicólogos no Brasil. Prontuário com IA, agenda inteligente, teleatendimento, gestão financeira e muito mais. Teste grátis por 15 dias." 
         />
         <meta name="keywords" content="software para psicólogos, prontuário eletrônico, gestão de consultório, teleatendimento psicologia, agenda online psicólogo" />
-        <link rel="canonical" href="https://psicoonex.vercel.app" />
+        <link rel="canonical" href="https://psicoone.vercel.app" />
         
         {/* Open Graph */}
         <meta property="og:type" content="website" />
         <meta property="og:title" content="PsicoOne - Sistema Completo para Psicólogos" />
         <meta property="og:description" content="A plataforma que psicólogos amam. Automatize prontuários com IA, reduza faltas em 40% e libere 2 horas por dia." />
-        <meta property="og:url" content="https://psicoonex.vercel.app" />
+        <meta property="og:url" content="https://psicoone.vercel.app" />
         
         {/* Twitter */}
         <meta name="twitter:card" content="summary_large_image" />

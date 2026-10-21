@@ -38,7 +38,7 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
     const user = userData.user;
-    const origin = req.headers.get("origin") || "https://psicoonex.vercel.app";
+    const origin = req.headers.get("origin") || "https://psicoone.vercel.app";
     const runId = crypto.randomUUID();
 
     const { data: profile } = await supabase

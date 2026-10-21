@@ -1,7 +1,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.57.4';
 
 const headers = {
-  'Access-Control-Allow-Origin': 'https://psicoonex.vercel.app',
+  'Access-Control-Allow-Origin': 'https://psicoone.vercel.app',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Content-Type': 'application/json',
@@ -11,11 +11,11 @@ const headers = {
 
 Deno.serve(async (req: Request) => {
   const allowedOrigins = new Set([
-    'https://psicoonex.vercel.app',
+    'https://psicoone.vercel.app',
     'https://psicoonex-git-codex-admin-account-emails-davidson-dias-projects.vercel.app',
   ]);
   const origin = req.headers.get('Origin') || '';
-  const responseHeaders = {...headers, 'Access-Control-Allow-Origin': allowedOrigins.has(origin) ? origin : 'https://psicoonex.vercel.app', Vary: 'Origin'};
+  const responseHeaders = {...headers, 'Access-Control-Allow-Origin': allowedOrigins.has(origin) ? origin : 'https://psicoone.vercel.app', Vary: 'Origin'};
   const reply = (status: number, body: unknown) => new Response(JSON.stringify(body), {status, headers: responseHeaders});
   if (req.method === 'OPTIONS') return new Response(null, {status: 204, headers: responseHeaders});
   if (req.method !== 'POST') return reply(405, {error: 'POST required'});

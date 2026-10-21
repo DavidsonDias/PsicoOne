@@ -1,7 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 import { requireUser } from "../_shared/require-auth.ts";
 
-const site = "https://psicoonex.vercel.app";
+const site = "https://psicoone.vercel.app";
 const headers = {
   "Access-Control-Allow-Origin": site,
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",

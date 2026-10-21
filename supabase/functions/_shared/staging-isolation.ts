@@ -2,7 +2,7 @@
 // Do not add an environment-variable bypass: restored credentials may still be valid.
 export function unvalidatedIntegrationResponse(req: Request): Response | null {
   const headers = {
-    'Access-Control-Allow-Origin': 'https://psicoonex.vercel.app',
+    'Access-Control-Allow-Origin': 'https://psicoone.vercel.app',
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-internal-secret, x-cron-secret',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     'Cache-Control': 'no-store',

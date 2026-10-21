@@ -1,7 +1,7 @@
 // The approved synthetic rehearsal completed successfully on 2026-10-20.
 // Closed intentionally: no credentials, database access or Google calls.
 const headers = {
-  "Access-Control-Allow-Origin": "https://psicoonex.vercel.app",
+  "Access-Control-Allow-Origin": "https://psicoone.vercel.app",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Content-Type": "application/json",

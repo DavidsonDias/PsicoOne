@@ -13,4 +13,4 @@ Allow: /
 User-agent: *
 Allow: /
 
-Sitemap: https://psicoonex.vercel.app/sitemap.xml
+Sitemap: https://psicoone.vercel.app/sitemap.xml
