@@ -10,7 +10,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "https://psicoonex.vercel.app",
+  "Access-Control-Allow-Origin": "https://psicoone.vercel.app",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-email-worker-secret",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Cache-Control": "no-store",
@@ -147,7 +147,7 @@ Deno.serve(async (req) => {
         .single();
 
       if (linkError || typeof link?.token !== "string" || !/^[A-Za-z0-9_-]{16,128}$/.test(link.token)) { stats.failed++; continue; }
-      const portalUrl = link?.token ? `https://psicoonex.vercel.app/portal/${link.token}` : undefined;
+      const portalUrl = link?.token ? `https://psicoone.vercel.app/portal/${link.token}` : undefined;
       const dateStr = new Date(apt.scheduled_at).toLocaleDateString("pt-BR", {
         weekday: "long", day: "2-digit", month: "long", year: "numeric",
         timeZone: "America/Sao_Paulo",

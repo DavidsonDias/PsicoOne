@@ -1,7 +1,7 @@
 // Staging only. Authenticate, then let the UI read its local subscription.
 const STAGING_URL = 'https://jeguvjpfuyksqiqrrvyz.supabase.co';
 const headers = {
-  'Access-Control-Allow-Origin': 'https://psicoonex.vercel.app',
+  'Access-Control-Allow-Origin': 'https://psicoone.vercel.app',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Content-Type': 'application/json',

@@ -1,6 +1,6 @@
 // PsicoOneX staging only. Test checkout does not grant subscription access.
 const PROJECT = 'https://jeguvjpfuyksqiqrrvyz.supabase.co';
-const APP = 'https://psicoonex.vercel.app';
+const APP = 'https://psicoone.vercel.app';
 // Existing frontend price IDs are selectors only; never sent to Stripe.
 const PLANS = new Map([
   ['price_1T9mRHAoMppjN4nr2UaJUpFD', { id: 'basic', product: 'prod_VJRCMaTkKJwey5', amount: 3900 }],

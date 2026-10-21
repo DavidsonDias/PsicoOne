@@ -132,7 +132,7 @@ Deno.serve(async (req) => {
         const recipientEmail = authUser?.user?.email;
         if (!recipientEmail) return;
 
-        const siteUrl = "https://psicoonex.vercel.app";
+        const siteUrl = "https://psicoone.vercel.app";
 
         await supabase.functions.invoke("send-transactional-email", {
           body: {

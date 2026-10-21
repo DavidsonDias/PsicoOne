@@ -6,7 +6,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const allowedReturns = new Set(['https://psicoonex.vercel.app/configuracoes', 'https://psicoone.vercel.app/configuracoes']);
+const allowedReturns = new Set(['https://psicoone.vercel.app/configuracoes']);
 const stateHash = async (value: string) => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))), b => b.toString(16).padStart(2, '0')).join('');
 const fail = (status: number) => new Response(JSON.stringify({ error: 'Conexão inválida ou expirada. Inicie novamente.' }), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
 const GOOGLE_CLIENT_ID = Deno.env.get("GOOGLE_CLIENT_ID")!;
@@ -47,7 +47,7 @@ Deno.serve(async (req) => {
 
     if (!["status", "get_auth_url", "exchange_code", "disconnect"].includes(action)) return unvalidatedIntegrationResponse(req)!;
     if (action === 'get_auth_url' || action === 'exchange_code') {
-      if (typeof redirect_uri !== 'string' || redirect_uri !== 'https://psicoonex.vercel.app/configuracoes') return fail(400);
+      if (typeof redirect_uri !== 'string' || redirect_uri !== 'https://psicoone.vercel.app/configuracoes') return fail(400);
     }
     // Generate OAuth URL
     if (action === "get_auth_url") {
