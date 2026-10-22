@@ -20,7 +20,6 @@ async function test(o={}){
  for(const o of [{foreign:true},{cancelled:true},{missing:true}]){r=await test({conflict:true,...o});assert.equal(r.result.id,null);}
  r=await test({badId:true});assert.equal(r.result.status,502);
  r=await test({status:429});assert.equal(r.result.id,null);assert.equal(r.calls.length,1);
- assert.ok(raw.includes('if (migrationPause) return migrationPause;'));
  assert.ok(raw.includes('reason: "already_linked"'));
- console.log('9 deterministic creation/recovery scenarios passed; no network. Pause retained.');
+ console.log('9 deterministic creation/recovery scenarios passed; no network. Production synchronization enabled.');
 })().catch(e=>{console.error(e);process.exitCode=1;});

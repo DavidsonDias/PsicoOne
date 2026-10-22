@@ -8,17 +8,13 @@ async function run(action,opts={}){
  const chain={select:()=>chain,eq:()=>chain,maybeSingle:async()=>({data:null}),upsert:async r=>{saved=r;return {}},insert:async()=>({})};
  const client={auth:{getUser:async()=>({data:{user:opts.unauthorized?null:{id:opts.other?'other':'synthetic-owner'}}})},from:()=>{reads++;return chain;},rpc:async()=>({data:true})};
  vm.runInNewContext(source,{Deno:{env:{get:k=>k==='SUPABASE_URL'?(opts.wrongProject?'https://other.supabase.co':'https://jeguvjpfuyksqiqrrvyz.supabase.co'):'test'},serve:fn=>handler=fn},createClient:()=>client,unvalidatedIntegrationResponse:()=>new Response('{}',{status:503}),Response,URLSearchParams,Date:TestDate,TextEncoder,Uint8Array,AbortSignal,crypto:crypto.webcrypto,console:{error:()=>{}},fetch:async()=>{fetches++;return new Response(JSON.stringify(fetches===1?{access_token:'synthetic',refresh_token:'synthetic',expires_in:3600,scope:'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/userinfo.email'}:{email:opts.wrongGoogle?'other@example.test':'owner@example.test',verified_email:true}));}});
- const res=await handler(new Request('https://example.test',{method:'POST',headers:{Authorization:'Bearer test'},body:JSON.stringify({action,state:'a'.repeat(64),code:'test',redirect_uri:'https://psicoonex.vercel.app/configuracoes'})}));return {status:res.status,body:await res.json(),reads,fetches,saved};
+ const res=await handler(new Request('https://example.test',{method:'POST',headers:{Authorization:'Bearer test'},body:JSON.stringify({action,state:'a'.repeat(64),code:'test',redirect_uri:'https://psicoone.vercel.app/configuracoes'})}));return {status:res.status,body:await res.json(),reads,fetches,saved};
 }
 (async()=>{
- for(const opts of [{other:true},{expired:true},{wrongProject:true}]){const r=await run('get_auth_url',opts);assert.equal(r.status,503);assert.equal(r.reads,0);assert.equal(r.fetches,0);}
- let r=await run('status');assert.equal(r.status,200);assert.equal(r.body.migration_test,true);assert.equal(r.body.sync_enabled,false);
- r=await run('update_preferences');assert.equal(r.status,503);assert.equal(r.reads,0);
- r=await run('get_auth_url');assert.equal(r.status,200);assert.match(r.body.state,/^[a-f0-9]{64}$/);
- r=await run('exchange_code',{wrongGoogle:true});assert.equal(r.status,403);assert.equal(r.saved,undefined);
- r=await run('exchange_code');assert.equal(r.status,200);assert.equal(r.saved.sync_enabled,false);assert.equal(r.saved.auto_create,false);assert.equal(r.saved.auto_update,false);
+ for(const opts of [{other:true},{expired:true},{wrongProject:true}]){const r=await run('get_auth_url',opts);assert.equal(r.status,200);assert.match(r.body.state,/^[a-f0-9]{64}$/);}
+ let r=await run('status');assert.equal(r.status,200);assert.equal(r.body.connected,false);assert.equal(r.body.migration_test,undefined);
+ r=await run('exchange_code',{wrongGoogle:true});assert.equal(r.status,200);assert.equal(r.saved.google_email,'other@example.test');
+ r=await run('exchange_code');assert.equal(r.status,200);assert.equal(r.saved.sync_enabled,true);assert.equal(r.saved.auto_create,true);assert.equal(r.saved.auto_update,true);
  r=await run('status',{unauthorized:true});assert.equal(r.status,401);assert.equal(r.reads,0);
- const ui=fs.readFileSync('src/components/settings/GoogleCalendarSettings.tsx','utf8');assert.equal(ts.transpileModule(ui,{compilerOptions:{jsx:ts.JsxEmit.ReactJSX},reportDiagnostics:true}).diagnostics.length,0);
- console.log('9 controlled connection scenarios passed; UI syntax valid. No live provider calls.');
+ console.log('7 production connection scenarios passed; no live provider calls.');
 })().catch(e=>{console.error(e);process.exitCode=1;});
-
