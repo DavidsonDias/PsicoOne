@@ -30,6 +30,7 @@ interface CalendarSyncResult {
 
 export function GoogleCalendarSettings() {
   const [prefs, setPrefs] = useState<GoogleCalendarPrefs>({ connected: false });
+  const [paused, setPaused] = useState(false);
   const [statusError, setStatusError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [connecting, setConnecting] = useState(false);
@@ -40,6 +41,7 @@ export function GoogleCalendarSettings() {
   const loadStatus = useCallback(async () => {
     setLoading(true);
     setStatusError(null);
+    setPaused(false);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error("Session unavailable");
@@ -48,6 +50,14 @@ export function GoogleCalendarSettings() {
         body: { action: "status" },
       });
 
+      if (error?.context instanceof Response && error.context.status === 503) {
+        const failure = await error.context.clone().json().catch(() => null);
+        if (failure?.code === "STAGING_INTEGRATION_PAUSED") {
+          setPaused(true);
+          setPrefs({ connected: false });
+          return;
+        }
+      }
       if (error || !data || typeof data.connected !== "boolean") throw new Error("Status unavailable");
       setPrefs(data);
     } catch (err) {
@@ -228,7 +238,7 @@ export function GoogleCalendarSettings() {
             <CardTitle className="text-lg">Google Calendar</CardTitle>
             <CardDescription>Sincronize seus agendamentos com o Google Agenda</CardDescription>
           </div>
-          {!statusError && prefs.connected && (
+          {!paused && !statusError && prefs.connected && (
             <Badge variant="default" className="gap-1">
               <CheckCircle2 className="h-3 w-3" />
               Conectado
@@ -239,7 +249,14 @@ export function GoogleCalendarSettings() {
 
       <CardContent className="space-y-6">
         {prefs.migration_test && <p role="status" className="text-sm text-muted-foreground">Teste de conexão Google. O envio de consultas está desativado.</p>}
-        {statusError ? (
+        {paused ? (
+          <div role="status" className="space-y-2">
+            <Badge variant="secondary">Integração pausada</Badge>
+            <p className="text-sm text-muted-foreground">
+              A conexão e a sincronização com o Google Agenda estão pausadas. Nenhuma consulta será enviada enquanto a integração estiver pausada.
+            </p>
+          </div>
+        ) : statusError ? (
           <div role="alert" className="space-y-3">
             <p className="text-sm text-muted-foreground">{statusError}</p>
             <Button variant="outline" onClick={loadStatus}>Tentar novamente</Button>
@@ -357,4 +374,3 @@ export function GoogleCalendarSettings() {
     </Card>
   );
 }
-
