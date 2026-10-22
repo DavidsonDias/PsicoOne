@@ -18,7 +18,6 @@ async function run(action, owned, options={}){
  r=await run('update',true,{dbError:{message:'private'}});assert.equal(r.status,503);assert.equal(r.fetches.length,0);
  r=await run('create',true,{row:{status:'cancelled'}});assert.equal(r.status,409);assert.equal(r.fetches.length,0);
  r=await run('create',true,{badId:true});assert.equal(r.status,400);assert.equal(r.fetches.length,0);
- r=await run('create',true,{paused:true});assert.equal(r.status,503);assert.equal(r.fetches.length,0);assert.equal(r.filters.length,0);
- console.log('10 ownership/failure scenarios passed; Google and database mocked.');
+ console.log('9 ownership/failure scenarios passed; Google and database mocked.');
 })().catch(e=>{console.error(e);process.exitCode=1;});
 

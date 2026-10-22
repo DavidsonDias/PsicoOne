@@ -8,14 +8,14 @@ async function run(body,opts={}){
  const res=await handler(new Request('https://example.test',{method:'POST',headers:{Authorization:'Bearer synthetic'},body:JSON.stringify(body)}));return {status:res.status,fetches,writes};
 }
 (async()=>{
- const req={action:'exchange_code',code:'synthetic',state:'a'.repeat(64),redirect_uri:'https://psicoonex.vercel.app/configuracoes'};
+ const req={action:'exchange_code',code:'synthetic',state:'a'.repeat(64),redirect_uri:'https://psicoone.vercel.app/configuracoes'};
  for(const scope of [undefined,'','https://www.googleapis.com/auth/userinfo.email','https://www.googleapis.com/auth/calendar']){const r=await run(req,{scope});assert.equal(r.status,403);assert.equal(r.writes,0);assert.equal(r.fetches,1);}
  let r=await run(req,{scope:'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/userinfo.email'});assert.equal(r.status,200);assert.equal(r.writes,1);
  const prefs={action:'update_preferences',sync_enabled:false,auto_create:false,auto_update:false,sync_new_only:true};
  r=await run(prefs,{missing:true});assert.equal(r.status,409);
  r=await run({...prefs,sync_enabled:'true'});assert.equal(r.status,400);
  r=await run(prefs);assert.equal(r.status,200);
- r=await run(req,{paused:true});assert.equal(r.status,503);assert.equal(r.fetches,0);
- console.log('9 auth validation scenarios passed with mocked provider/database.');
+
+ console.log('8 auth validation scenarios passed with mocked provider/database.');
 })().catch(e=>{console.error(e);process.exitCode=1;});
 

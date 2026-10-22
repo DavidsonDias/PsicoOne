@@ -17,6 +17,5 @@ async function run(o={}){
  for(const o of [{saveError:true},{saveMissing:true},{invalidToken:true}]){r=await run({refresh:true,...o});assert.equal(r.status,401);assert.equal(r.calls.length,1);}
  r=await run({refresh:true});assert.equal(r.body.success,true);assert.equal(r.calls.length,2);
  r=await run({all:true,saveMissing:true});assert.equal(r.body.success,false);assert.equal(r.body.failed,1);assert.equal(r.body.created,0);
- r=await run({paused:true});assert.equal(r.status,503);assert.equal(r.calls.length,0);
- console.log('10 persistence scenarios passed; no real data or provider calls.');
+ console.log('9 persistence scenarios passed; no real data or provider calls.');
 })().catch(e=>{console.error(e);process.exitCode=1;});

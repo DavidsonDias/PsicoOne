@@ -1,4 +1,3 @@
-import { unvalidatedIntegrationResponse } from "../_shared/staging-isolation.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -115,12 +114,11 @@ async function getValidAccessToken(serviceClient: any, userId: string): Promise<
 }
 
 Deno.serve(async (req) => {
-  const migrationPause = unvalidatedIntegrationResponse(req);
-  if (migrationPause) return migrationPause;
-
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
+
+  if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
   try {
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SUPABASE_SERVICE_ROLE_KEY) {
@@ -164,7 +162,7 @@ Deno.serve(async (req) => {
       .from("google_calendar_tokens")
       .select("sync_enabled, auto_create, auto_update, sync_new_only, calendar_id")
       .eq("user_id", userId)
-      .single();
+      .maybeSingle();
 
     if (prefsError) return json({ error: "Não foi possível consultar preferências" }, 503);
     if (!prefs?.sync_enabled) {
@@ -255,7 +253,7 @@ Deno.serve(async (req) => {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
 
-      if (!res.ok && res.status !== 404) {
+      if (!res.ok && res.status !== 404 && res.status !== 410) {
         return json({ error: "Falha ao remover evento" }, 502);
       }
 
