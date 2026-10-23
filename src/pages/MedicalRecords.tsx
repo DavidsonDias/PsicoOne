@@ -455,9 +455,13 @@ const MedicalRecords = () => {
   };
 
   const loadPatients = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) { setPatients([]); return; }
     const { data, error } = await supabase
       .from("patients")
       .select("id, full_name")
+      .eq("psychologist_id", session.user.id)
+      .is("deleted_at", null)
       .eq("status", "active")
       .order("full_name");
 
