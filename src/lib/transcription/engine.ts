@@ -206,9 +206,7 @@ export class ClinicalTranscriptionEngine {
 
     const recorder = new DictationRecorder({
       gain: this.gain,
-      // Janela maior = muito menos chamadas de STT para a mesma sessão,
-      // mantendo a continuidade pelo overlap e pela deduplicação.
-      windowMs: 24_000,
+      // O gravador envia trechos curtos; overlap e deduplicação mantêm continuidade.
       onWindow: ({ base64, mimeType, durationMs }) =>
         void this.captureChunk(base64, mimeType, durationMs),
       onLevel: (rms) => this.handleLevel(rms),
