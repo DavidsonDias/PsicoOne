@@ -9,6 +9,7 @@
 import { blobToBase64, concatFloat32, downsample, encodeWav, normalizePeak } from "./wav";
 import { AdaptiveVoiceActivityDetector } from "./voice-activity";
 import { captureSupportError, captureErrorMessage } from "./capture-diagnostics";
+import { DICTATION_WINDOW_MS, shouldFlushDictation } from "./dictation-window";
 
 export interface DictationRecorderOptions {
   /** Ganho aplicado ao microfone (1 = normal, 3 = alta sensibilidade) */
@@ -63,7 +64,7 @@ export class DictationRecorder {
   constructor(options: DictationRecorderOptions) {
     this.opts = {
       gain: 2,
-      windowMs: 24000,
+      windowMs: DICTATION_WINDOW_MS,
       silenceThreshold: 0.006,
       targetSampleRate: 16000,
 
@@ -219,16 +220,9 @@ export class DictationRecorder {
       this.peakRms = Math.max(this.peakRms, rms);
       this.opts.onLevel?.(rms);
 
-      // Fecha a janela numa pausa natural da fala, ou no limite máximo.
-      // A janela só fecha por pausa depois de acumular fala suficiente — isso
-      // reduz drasticamente o número de chamadas de transcrição sem cortar
-      // frases (o overlap + dedupe garantem a continuidade).
+      // Envia na pausa natural ou a cada 8s; overlap e dedupe preservam a fronteira.
       const totalMs = (this.bufferedSamples / (this.ctx?.sampleRate || 48000)) * 1000;
-      const pauseClose =
-        (totalMs >= 15000 && this.silenceMs >= 1000) ||
-        (this.speechMs >= 600 && this.silenceMs >= 4000);
-      const hardClose = totalMs >= this.opts.windowMs;
-      if (pauseClose || hardClose) void this.flush(false);
+      if (shouldFlushDictation(totalMs, this.speechMs, this.silenceMs, this.opts.windowMs)) void this.flush(false);
     };
 
     // Saída silenciosa: mantém o grafo ativo sem devolver áudio ao usuário
