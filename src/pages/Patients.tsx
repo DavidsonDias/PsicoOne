@@ -195,9 +195,12 @@ export default function Patients() {
 
   const loadPatients = async () => {
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) { setPatients([]); return; }
       const { data, error } = await supabase
         .from("patients")
         .select("*")
+        .eq("psychologist_id", session.user.id)
         .is("deleted_at", null)
         .order("created_at", { ascending: false });
       if (error) throw error;

@@ -8,6 +8,7 @@
 
 import { blobToBase64, concatFloat32, downsample, encodeWav, normalizePeak } from "./wav";
 import { AdaptiveVoiceActivityDetector } from "./voice-activity";
+import { captureSupportError, captureErrorMessage } from "./capture-diagnostics";
 
 export interface DictationRecorderOptions {
   /** Ganho aplicado ao microfone (1 = normal, 3 = alta sensibilidade) */
@@ -112,6 +113,8 @@ export class DictationRecorder {
 
   async start(): Promise<boolean> {
     if (this.running) return true;
+    const unsupported = captureSupportError();
+    if (unsupported) { this.opts.onError?.(unsupported); return false; }
     try {
       this.stream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -126,7 +129,7 @@ export class DictationRecorder {
       });
     } catch (e) {
       this.opts.onError?.(
-        "Não foi possível acessar o microfone. Verifique a permissão do navegador/aplicativo."
+        captureErrorMessage(e)
       );
       return false;
     }

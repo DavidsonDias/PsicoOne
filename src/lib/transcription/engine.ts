@@ -15,6 +15,7 @@
 
 import { supabase } from "@/integrations/supabase/client";
 import { DictationRecorder } from "@/lib/audio/dictation-recorder";
+import { captureSupportError } from "@/lib/audio/capture-diagnostics";
 import { dedupeOverlap } from "@/lib/audio/dedupe-overlap";
 import {
   deleteChunk,
@@ -167,6 +168,24 @@ export class ClinicalTranscriptionEngine {
   async start(): Promise<boolean> {
     if (this.state === "recording" || this.state === "initializing") return true;
     this.setState("initializing");
+    const unsupported = captureSupportError();
+    if (unsupported) {
+      this.opts.onNotice?.("capture_interrupted", unsupported);
+      this.setState("error");
+      return false;
+    }
+    try {
+      const { data, error } = await supabase.functions.invoke("speech-to-text", { body: { healthCheck: true } });
+      if (error || !data?.available) {
+        this.opts.onNotice?.("capture_interrupted", "Serviço de transcrição indisponível. Verifique a conexão ou contate o suporte. Nenhum áudio foi gravado.");
+        this.setState("error");
+        return false;
+      }
+    } catch {
+      this.opts.onNotice?.("capture_interrupted", "Sem conexão com a transcrição. Tente novamente. Nenhum áudio foi gravado.");
+      this.setState("error");
+      return false;
+    }
     this.startedAt = Date.now();
     this.acceptingChunks = true;
 
@@ -200,7 +219,12 @@ export class ClinicalTranscriptionEngine {
       },
     });
 
-    const ok = await recorder.start();
+    let ok = false;
+    try { ok = await recorder.start(); }
+    catch {
+      await recorder.stop().catch(() => undefined);
+      this.opts.onNotice?.("capture_interrupted", "Falha ao iniciar o áudio. Atualize o navegador e verifique o microfone.");
+    }
     if (!ok) {
       this.setState("error");
       return false;
@@ -279,7 +303,7 @@ export class ClinicalTranscriptionEngine {
     this.setState("saving");
     const chunks = await getSessionChunks(this.sessionId).catch(() => []);
     const pending = chunks.filter(
-      (c) => c.status !== "transcribed" && c.status !== "failed_permanent"
+      (c) => c.status !== "transcribed"
     ).length;
     this.metrics.pending = pending;
     this.metrics.durationMs = Date.now() - this.startedAt;
@@ -328,7 +352,7 @@ export class ClinicalTranscriptionEngine {
   /** Confirmação de commit: só então o áudio local pode ser removido. */
   async confirmPersisted() {
     const chunks = await getSessionChunks(this.sessionId).catch(() => []);
-    await Promise.all(chunks.filter((c) => c.audio).map((c) => dropChunkAudio(c.id)));
+    await Promise.all(chunks.filter((c) => c.audio && c.status === "transcribed").map((c) => dropChunkAudio(c.id)));
   }
 
   // ── Captura → chunk durável ──
@@ -368,6 +392,7 @@ export class ClinicalTranscriptionEngine {
     let attempt = 0;
     let text = "";
     let permanent = false;
+    let succeeded = false;
 
     while (attempt < MAX_ATTEMPTS) {
       attempt += 1;
@@ -406,6 +431,7 @@ export class ClinicalTranscriptionEngine {
           break;
         }
         text = typeof data?.text === "string" ? data.text : "";
+        succeeded = true;
         break;
       } catch {
         if (attempt >= MAX_ATTEMPTS) break;
@@ -417,7 +443,7 @@ export class ClinicalTranscriptionEngine {
     this.latencyCount += 1;
     this.metrics.avgLatencyMs = Math.round(this.latencySum / this.latencyCount);
 
-    const transcribed = text !== "" || (!permanent && attempt <= MAX_ATTEMPTS && text === "");
+    const transcribed = succeeded;
     const finalStatus: TranscriptionChunkRecord["status"] = permanent
       ? "failed_permanent"
       : transcribed
@@ -610,7 +636,10 @@ export async function reprocessSession(
 }
 
 export async function finishRecovery(sessionId: string) {
+  const chunks = await getSessionChunks(sessionId);
+  if (chunks.some((chunk) => chunk.audio && chunk.status !== "transcribed")) return false;
   await patchSession(sessionId, { status: "completed", completed_at: Date.now() });
+  return true;
 }
 
 export async function discardRecovery(sessionId: string) {
