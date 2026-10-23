@@ -4,7 +4,6 @@
   "generate-medical-record",
   "proactive-insights",
   "refine-record",
-  "speech-to-text",
   "summarize-session",
   "transcribe-audio",
   "google-calendar-auth",

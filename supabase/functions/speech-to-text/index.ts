@@ -1,4 +1,3 @@
-import { unvalidatedIntegrationResponse } from "../_shared/staging-isolation.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { requireUser } from "../_shared/require-auth.ts";
 
@@ -64,17 +63,15 @@ function sanitizePt(text: string): string {
 
 
 serve(async (req) => {
-  const migrationPause = unvalidatedIntegrationResponse(req);
-  if (migrationPause) return migrationPause;
-
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  if (req.method !== "POST") return json({ error: "POST required" }, 405);
 
   const auth = await requireUser(req, corsHeaders);
   if ("error" in auth) return auth.error;
 
   try {
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) return json({ error: "LOVABLE_API_KEY not configured" }, 500);
+    if (!LOVABLE_API_KEY) return json({ error: "Serviço de transcrição não configurado. Contate o suporte." }, 503);
 
     const body = await req.json();
     // Modelo econômico como padrão (etapa A): mantém qualidade adequada em
@@ -94,7 +91,10 @@ serve(async (req) => {
       model?: string;
     };
 
-    if (!audio) return json({ error: "No audio data provided" }, 400);
+    if (typeof audio !== "string" || !audio) return json({ error: "No audio data provided" }, 400);
+    if (audio.length > 32 * 1024 * 1024) return json({ error: "Áudio muito grande" }, 413);
+    if (model !== DEFAULT_MODEL) return json({ error: "Modelo de transcrição inválido" }, 400);
+    if (typeof mimeType !== "string" || typeof language !== "string") return json({ error: "Formato inválido" }, 400);
 
     // Decode base64 → bytes
     const binary = atob(audio);
@@ -123,11 +123,11 @@ serve(async (req) => {
       method: "POST",
       headers: { Authorization: `Bearer ${LOVABLE_API_KEY}` },
       body: form,
+      signal: AbortSignal.timeout(45000),
     });
 
     if (!resp.ok) {
-      const detail = await resp.text().catch(() => "");
-      console.error("speech-to-text gateway error:", resp.status, detail);
+      console.error("speech-to-text gateway status:", resp.status);
       if (resp.status === 429) {
         return json({ error: "Muitas solicitações de transcrição. Aguarde alguns segundos." }, 429);
       }
@@ -137,7 +137,7 @@ serve(async (req) => {
       if (resp.status === 403) {
         return json({ error: "Transcrição por IA bloqueada nas configurações do workspace." }, 403);
       }
-      return json({ error: `Falha na transcrição [${resp.status}]`, detail }, resp.status);
+      return json({ error: `Serviço de transcrição indisponível [${resp.status}]` }, 502);
     }
 
     const data = await resp.json();
@@ -146,7 +146,7 @@ serve(async (req) => {
     return json({ text: clean, usage: data?.usage, discarded: raw !== "" && clean === "" });
 
   } catch (e) {
-    console.error("speech-to-text error:", e);
-    return json({ error: e instanceof Error ? e.message : "Unknown error" }, 500);
+    console.error("speech-to-text failure", e instanceof Error ? e.name : "UnknownError");
+    return json({ error: "Não foi possível processar o áudio. Tente novamente." }, 500);
   }
 });

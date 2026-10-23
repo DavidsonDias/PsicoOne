@@ -222,7 +222,7 @@ export async function listRecoverableSessions(
       getSessionChunks(session.id),
     ]);
     const pendingChunks = chunks.filter(
-      (c) => c.audio && c.status !== "transcribed" && c.status !== "failed_permanent"
+      (c) => c.audio && c.status !== "transcribed"
     ).length;
     const text = segments
       .slice()

@@ -60,6 +60,7 @@ export function VoiceRecorder({
 }: VoiceRecorderProps) {
   const [calibrating, setCalibrating] = useState(false);
   const [recovering, setRecovering] = useState(false);
+  const [starting, setStarting] = useState(false);
 
   const dictation = useClinicalTranscription({
     context: "medical_record",
@@ -92,13 +93,19 @@ export function VoiceRecorder({
   } = dictation;
 
   const handleStart = useCallback(async () => {
-    const ok = await dictation.start();
-    if (ok) toast.info("🎙️ Gravando. Cada trecho entra no prontuário e no rascunho em tempo real.");
-  }, [dictation]);
+    if (starting) return;
+    setStarting(true);
+    try {
+      const ok = await dictation.start();
+      if (ok) toast.info("🎙️ Gravando. Cada trecho entra no prontuário e no rascunho em tempo real.");
+    } catch {
+      toast.error("Não foi possível iniciar a transcrição. Verifique o microfone e tente novamente.");
+    } finally { setStarting(false); }
+  }, [dictation, starting]);
 
   const handleStop = useCallback(async () => {
     const result = await dictation.stopAndSave();
-    if (!result.text.trim()) {
+    if (!result.text.trim() && result.integrity) {
       toast.info("Nenhuma fala foi reconhecida.");
       return;
     }
@@ -135,6 +142,10 @@ export function VoiceRecorder({
           const res = await reprocessSession(sessionId);
           if (res.text) finalText = res.text;
           toast.info(`${res.processed} trecho(s) pendente(s) processado(s).`);
+          if (res.processed < pending) {
+            toast.warning("Ainda há trechos pendentes. A recuperação foi preservada para tentar novamente.");
+            return;
+          }
         }
         if (finalText.trim()) onTranscript(polish(finalText), true);
         await finishRecovery(sessionId);
@@ -325,6 +336,7 @@ export function VoiceRecorder({
 
   return (
     <div className="flex w-full flex-col gap-2 sm:w-auto">
+      {warning && <p role="alert" className="max-w-md text-xs text-destructive">{warning}</p>}
       {recoverable.length > 0 && (
         <div className="space-y-2 rounded-lg border border-primary/30 bg-primary/5 p-2 text-xs">
           {recoverable.map((item) => (
@@ -368,13 +380,13 @@ export function VoiceRecorder({
           variant="outline"
           size="sm"
           onClick={handleStart}
-          disabled={disabled}
+          disabled={disabled || starting}
           className="gap-2"
           title="Iniciar transcrição (voz)"
         >
           <Mic className="h-4 w-4" />
-          <span className="hidden sm:inline">Iniciar transcrição</span>
-          <span className="sm:hidden">Voz</span>
+          <span className="hidden sm:inline">{starting ? "Preparando microfone..." : "Iniciar transcrição"}</span>
+          <span className="sm:hidden">{starting ? "Preparando..." : "Voz"}</span>
         </Button>
         {sensitivityControl}
       </div>

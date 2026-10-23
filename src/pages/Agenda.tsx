@@ -173,17 +173,36 @@ export default function Agenda() {
   };
 
   const loadPatients = async (psychologistId: string) => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("patients")
       .select("id, full_name, email, default_session_value, payment_day, monthly_plan_value, lifecycle_status")
       .eq("psychologist_id", psychologistId)
       .eq("status", "active")
       .is("deleted_at", null)
       .order("full_name");
+    if (error) {
+      toast.error("Não foi possível atualizar os pacientes. Tente abrir o agendamento novamente.");
+      return;
+    }
     // Exclude patients in lifecycle states that should not receive new appointments
     const blocked = new Set(["discharged", "dropout", "closed", "archived"]);
     setPatients(((data || []) as any[]).filter((p) => !blocked.has(p.lifecycle_status)) as Patient[]);
   };
+
+  // A registration in another tab must be available without reloading the agenda.
+  useEffect(() => {
+    if (!userId) return;
+    if (dialogOpen) void loadPatients(userId);
+    const refresh = () => {
+      if (document.visibilityState === "visible") void loadPatients(userId);
+    };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [userId, dialogOpen]);
 
   const checkConflicts = useCallback((date: string, time: string, duration: number, excludeId?: string) => {
     // Build start/end using local time components to avoid UTC shifts

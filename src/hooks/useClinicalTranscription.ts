@@ -118,7 +118,7 @@ export function useClinicalTranscription({
         storeGain(g);
       },
       onNotice: (kind, message) => {
-        if (kind === "capture_interrupted" || kind === "no_audio_detected") setWarning(message);
+        if (kind !== "capture_resumed") setWarning(message);
         if (kind === "capture_resumed") setWarning(null);
         noticeRef.current?.(message);
       },
