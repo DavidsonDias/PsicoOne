@@ -21,8 +21,7 @@ Deno.serve(async (req) => {
     const url = Deno.env.get("SUPABASE_URL")?.replace(/\/$/, "");
     const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     const secret = Deno.env.get("EMAIL_WORKER_SECRET");
-    const recipient = Deno.env.get("EMAIL_TEST_RECIPIENT")?.trim().toLowerCase();
-    if (url !== "https://jeguvjpfuyksqiqrrvyz.supabase.co" || !key || !secret || secret.length < 32 || !recipient) {
+    if (url !== "https://jeguvjpfuyksqiqrrvyz.supabase.co" || !key || !secret || secret.length < 32) {
       return reply(503, { error: "Invalid staging configuration" });
     }
     let body;
@@ -46,8 +45,9 @@ Deno.serve(async (req) => {
       .eq("id", patientId).eq("psychologist_id", auth.user.id).is("deleted_at", null).maybeSingle();
     if (patientError) return reply(503, { error: "Falha ao consultar paciente" });
     if (!patient || patient.psychologist_id !== auth.user.id) return reply(404, { error: "Paciente não encontrado" });
-    if (!patient.email || patient.email.trim().toLowerCase() !== recipient) {
-      return reply(403, { error: "Recipient blocked by staging allowlist" });
+    const recipient = typeof patient.email === "string" ? patient.email.trim().toLowerCase() : "";
+    if (!/^[^\s<>;,]+@[^\s<>;,]+\.[^\s<>;,]+$/.test(recipient)) {
+      return reply(400, { error: "Cadastre um e-mail válido para o paciente.", code: "PATIENT_EMAIL_MISSING" });
     }
     const { data: link, error: linkError } = await db.from("patient_access_links")
       .select("id, expires_at, is_revoked, appointment_id, patient_id, created_by")
@@ -69,8 +69,8 @@ Deno.serve(async (req) => {
       headers: { "Content-Type": "application/json", "x-email-worker-secret": secret },
       signal: AbortSignal.timeout(15000),
       body: JSON.stringify({
-        templateName: "appointment-confirmation", recipientEmail: recipient,
-        idempotencyKey: `apt-confirm-${appointmentId}`,
+        delivery: "immediate", templateName: "appointment-confirmation", recipientEmail: recipient,
+        idempotencyKey: `apt-confirm-${appointmentId}-${link.id}`,
         templateData: {
           patientName: patient.full_name.split(" ")[0],
           date: date.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long", year: "numeric", timeZone: "America/Sao_Paulo" }),
@@ -82,12 +82,12 @@ Deno.serve(async (req) => {
       }),
     });
     const result = await response.json().catch(() => null);
-    if (response.ok && result?.success === true && result?.already_sent === true &&
+    if (response.ok && result?.success === true &&
         result?.sent === true && result?.queued === false && typeof result?.messageId === "string" && result.messageId) {
-      return reply(200, { sent: true, queued: false, already_sent: true, portalUrl, messageId: result.messageId });
+      return reply(200, { sent: true, queued: false, already_sent: result.already_sent === true, portalUrl, messageId: result.messageId });
     }
     if (!response.ok || result?.success !== true || result?.queued !== true || result?.sent !== false || typeof result?.messageId !== "string" || !result.messageId) {
-      return reply(502, { sent: false, queued: false, error: "Não foi possível enfileirar o e-mail" });
+      return reply(502, { sent: false, queued: false, error: "Não foi possível confirmar o envio do e-mail" });
     }
     return reply(200, { sent: false, queued: true, manual_processing: true, portalUrl, messageId: result.messageId });
   } catch {

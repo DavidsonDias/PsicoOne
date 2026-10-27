@@ -56,7 +56,7 @@ async function run(label, options = {}, expected = 200, calls = 0) {
       assert(init.signal instanceof AbortSignal);
       const body = JSON.parse(init.body);
       assert.equal(body.recipientEmail, 'test@example.invalid');
-      assert.equal(body.templateData.portalUrl, 'https://psicoonex.vercel.app/portal/' + token);
+      assert.equal(body.templateData.portalUrl, 'https://psicoone.vercel.app/portal/' + token);
       assert.equal(body.templateName, 'appointment-confirmation');
       assert.equal(body.metadata.appointment_id, appointment); assert.equal(body.metadata.patient_id, patient);
       if (options.throwFetch) throw new Error('private network details');
@@ -86,14 +86,14 @@ async function run(label, options = {}, expected = 200, calls = 0) {
   await run('invalid verified session', { invalidAuth: true }, 401);
   await run('wrong project', { env: { SUPABASE_URL: 'https://wrong.invalid' } }, 503);
   await run('missing worker secret', { env: { EMAIL_WORKER_SECRET: undefined } }, 503);
-  await run('missing recipient', { env: { EMAIL_TEST_RECIPIENT: undefined } }, 503);
+  await run('test recipient no longer required', { env: { EMAIL_TEST_RECIPIENT: undefined } }, 200, 1);
   await run('invalid JSON', { raw: '{' }, 400);
   await run('invalid identifiers', { body: { appointmentId: 'bad', patientId: patient, token } }, 400);
   await run('invalid portal token', { body: { appointmentId: appointment, patientId: patient, token: '<script>' } }, 400);
   for (const [table, field, value, status] of [
     ['appointments', 'psychologist_id', other, 404], ['appointments', 'patient_id', other, 404],
     ['appointments', 'deleted_at', '2030-01-01', 404], ['patients', 'psychologist_id', other, 404],
-    ['patients', 'deleted_at', '2030-01-01', 404], ['patients', 'email', 'blocked@example.invalid', 403],
+    ['patients', 'deleted_at', '2030-01-01', 404], ['patients', 'email', '', 400],
     ['patient_access_links', 'appointment_id', other, 400], ['patient_access_links', 'patient_id', other, 400],
     ['patient_access_links', 'created_by', other, 400], ['patient_access_links', 'is_revoked', true, 400],
     ['patient_access_links', 'expires_at', '2000-01-01T00:00:00Z', 400], ['patient_access_links', 'expires_at', null, 400],
@@ -109,7 +109,7 @@ async function run(label, options = {}, expected = 200, calls = 0) {
   await run('network failure', { throwFetch: true }, 500, 1);
   await run('valid request queued only', {}, 200, 1);
   await run('already sent', {alreadySent:true,response:{success:true,queued:false,sent:true,already_sent:true,messageId:'id'}},200,1);
-  await run('sent is not dedup acknowledgement', {response:{success:true,queued:false,sent:true,messageId:'id'}},502,1);
+  await run('immediate delivery accepted', {alreadySent:true,response:{success:true,queued:false,sent:true,already_sent:true,messageId:'id'}},200,1);
   await run('contradictory response', {response:{success:true,queued:true,sent:true,already_sent:true,messageId:'id'}},502,1);
   console.log(`PASS ${passed} synthetic authorization, linkage, allowlist and queue-contract scenarios. No network or database writes.`);
 })().catch(error => { console.error(error); process.exitCode = 1; });

@@ -206,7 +206,7 @@ Deno.serve(async (req) => {
       // Notificação unificada via dispatch-notification (insert + push + preferências)
       // Mesmo fluxo de Agenda/Financeiro: garante toast + badge + central + push
       try {
-        await fetch(`${SUPABASE_URL}/functions/v1/dispatch-notification`, {
+        const dispatched = await fetch(`${SUPABASE_URL}/functions/v1/dispatch-notification`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -224,8 +224,9 @@ Deno.serve(async (req) => {
             metadata: { patient_id: v.row.patient_id, event: "completed" },
           }),
         });
+        if (!dispatched.ok) throw new Error("Notification dispatch failed");
       } catch (e) {
-        console.warn("[patient-onboarding] dispatch falhou, fallback direto:", e);
+        console.warn("[patient-onboarding] using notification fallback");
         await supabase.from("notifications").insert({
           user_id: v.row.psychologist_id,
           type: "patient_onboarding",

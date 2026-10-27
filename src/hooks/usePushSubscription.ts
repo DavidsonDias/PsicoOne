@@ -32,7 +32,7 @@ export function usePushSubscription() {
   const [supported, setSupported] = useState(false);
   const [subscribed, setSubscribed] = useState(false);
   const [loading, setLoading] = useState(false);
-  const vapid = (import.meta.env.VITE_VAPID_PUBLIC_KEY as string | undefined) || VAPID_PUBLIC_KEY;
+  const vapid = VAPID_PUBLIC_KEY;
 
   useEffect(() => {
     const ok =
@@ -45,7 +45,14 @@ export function usePushSubscription() {
     if (ok) {
       navigator.serviceWorker.getRegistration("/push-sw.js").then(async (reg) => {
         const sub = await reg?.pushManager.getSubscription();
-        setSubscribed(!!sub);
+        const key = sub?.options.applicationServerKey;
+        const expected = urlBase64ToUint8Array(vapid);
+        const matches = key && key.byteLength === expected.length && new Uint8Array(key).every((b, i) => b === expected[i]);
+        if (!sub || !matches) { setSubscribed(false); return; }
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) { setSubscribed(false); return; }
+        const { data, error } = await supabase.from("push_subscriptions").select("id").eq("endpoint", sub.endpoint).eq("user_id", session.user.id).maybeSingle();
+        setSubscribed(!error && !!data);
       });
     }
   }, [vapid]);
@@ -65,6 +72,12 @@ export function usePushSubscription() {
       const reg =
         (await navigator.serviceWorker.getRegistration("/push-sw.js")) ||
         (await navigator.serviceWorker.register("/push-sw.js"));
+      const existing = await reg.pushManager.getSubscription();
+      const expectedKey = urlBase64ToUint8Array(vapid);
+      const actualKey = existing?.options.applicationServerKey;
+      if (existing && (!actualKey || new Uint8Array(actualKey).some((b, i) => b !== expectedKey[i]) || actualKey.byteLength !== expectedKey.length)) {
+        await existing.unsubscribe();
+      }
       const sub = await reg.pushManager.subscribe({
         userVisibleOnly: true,
         // Some mobile browsers (notably Android Chrome) reject ArrayBuffer
@@ -73,8 +86,8 @@ export function usePushSubscription() {
       });
       const json: any = sub.toJSON();
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
-      await supabase.from("push_subscriptions").upsert(
+      if (!session) throw new Error("Sessão expirada");
+      const { error } = await supabase.from("push_subscriptions").upsert(
         {
           user_id: session.user.id,
           endpoint: json.endpoint,
@@ -84,6 +97,7 @@ export function usePushSubscription() {
         },
         { onConflict: "endpoint" }
       );
+      if (error) throw error;
       setSubscribed(true);
       toast.success("Notificações push ativadas");
     } catch (e: any) {

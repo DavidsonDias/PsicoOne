@@ -21,8 +21,7 @@ Deno.serve(async (req) => {
     const url = Deno.env.get("SUPABASE_URL")?.replace(/\/$/, "");
     const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     const secret = Deno.env.get("EMAIL_WORKER_SECRET");
-    const recipient = Deno.env.get("EMAIL_TEST_RECIPIENT")?.trim().toLowerCase();
-    if (url !== "https://jeguvjpfuyksqiqrrvyz.supabase.co" || !key || !secret || secret.length < 32 || !recipient) {
+    if (url !== "https://jeguvjpfuyksqiqrrvyz.supabase.co" || !key || !secret || secret.length < 32) {
       return reply(503, { error: "Invalid staging configuration" });
     }
     let body;
@@ -38,9 +37,9 @@ Deno.serve(async (req) => {
     if (patientError) return reply(503, { error: "Falha ao consultar paciente" });
     if (!patient || patient.psychologist_id !== auth.user.id) return reply(404, { error: "Paciente não encontrado" });
     if (patient.user_id) return reply(409, { error: "Paciente já tem acesso ativo ao portal" });
-    // Reject before any invite writes; never redirect a real patient's invitation.
-    if (typeof patient.email !== "string" || patient.email.trim().toLowerCase() !== recipient) {
-      return reply(403, { error: "Destinatário não autorizado para teste" });
+    const recipient = typeof patient.email === "string" ? patient.email.trim().toLowerCase() : "";
+    if (!/^[^\s<>;,]+@[^\s<>;,]+\.[^\s<>;,]+$/.test(recipient)) {
+      return reply(400, { error: "Cadastre um e-mail válido para o paciente.", code: "PATIENT_EMAIL_MISSING" });
     }
     const { data: profile, error: profileError } = await db.from("profiles")
       .select("full_name").eq("id", auth.user.id).maybeSingle();
@@ -72,7 +71,7 @@ Deno.serve(async (req) => {
         method: "POST", headers: { "Content-Type": "application/json", "x-email-worker-secret": secret },
         signal: AbortSignal.timeout(15000),
         body: JSON.stringify({
-          templateName: "patient-portal-invite", recipientEmail: recipient,
+          delivery: "immediate", templateName: "patient-portal-invite", recipientEmail: recipient,
           idempotencyKey: "patient-invite-" + invite.id,
           templateData: {
             patientName: patient.full_name, psychologistName: profile?.full_name || "Seu profissional",
@@ -83,15 +82,15 @@ Deno.serve(async (req) => {
       });
       const result = await response.json().catch(() => null);
       alreadySent = response.ok && result?.success === true && result?.queued === false &&
-        result?.sent === true && result?.already_sent === true &&
+        result?.sent === true &&
         typeof result?.messageId === "string" && result.messageId.length > 0;
       queued = response.ok && result?.success === true && result?.queued === true && result?.sent === false &&
         typeof result?.messageId === "string" && result.messageId.length > 0;
     } catch { /* Keep the invitation available for a manual retry. */ }
     return reply(200, {
       success: true, invite_url: inviteUrl, expires_at: invite.expires_at,
-      email_sent: alreadySent, email_already_sent: alreadySent, email_queued: queued, manual_processing: true,
-      email_error: queued || alreadySent ? null : "Não foi possível confirmar o e-mail na fila",
+      email_sent: alreadySent,  email_queued: queued, manual_processing: queued,
+      email_error: queued || alreadySent ? null : "Não foi possível confirmar o envio do e-mail",
     });
   } catch {
     return reply(500, { error: "Erro interno ao criar convite" });

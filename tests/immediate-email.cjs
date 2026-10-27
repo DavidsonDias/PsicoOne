@@ -1,0 +1,14 @@
+const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict'),ts=require('typescript');
+const source=ts.transpileModule(fs.readFileSync('supabase/functions/send-transactional-email/index.ts','utf8').replace(/^import .*\r?\n/gm,''),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText;
+async function run(mode){let handler,sent=0,queued=0;
+ const env={SUPABASE_URL:'https://jeguvjpfuyksqiqrrvyz.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'fake',EMAIL_WORKER_SECRET:'fake-secret-at-least-thirty-two-characters',EMAIL_TEST_RECIPIENT:'tester@example.invalid',EMAIL_FROM:'PsicoOne <noreply@psicoone-mail.sevendevx.com>',RESEND_API_KEY:'fake'};
+ function from(table){const q={select(){return q},eq(){return q},insert(){return q},maybeSingle(){return q},then(resolve){resolve({data:table==='email_unsubscribe_tokens'?{token:'synthetic',used_at:null}:table==='suppressed_emails'&&mode==='suppressed'?{id:1}:null,error:null})}};return q}
+ vm.runInNewContext(source,{exports:{},Deno:{env:{get:n=>env[n]},serve:f=>handler=f},Response,URL,TextEncoder,AbortSignal,crypto:require('crypto').webcrypto,console:{log(){},error(){},warn(){}},createClient:()=>({from,rpc(){queued++;throw Error('Unexpected queue')}}),React:{createElement:()=>({})},renderAsync:async()=>'<p>synthetic</p>',TEMPLATES:{'appointment-confirmation':{component:()=>{},subject:'Synthetic'}},fetch:async(url,init)=>{sent++;assert.equal(url,'https://api.resend.com/emails');assert.equal(JSON.parse(init.body).to[0],'patient@example.invalid');assert.equal(init.headers['Idempotency-Key'],'synthetic-key');return new Response(JSON.stringify({id:'synthetic'}),{status:mode==='provider-error'?403:200})}});
+ const body={delivery:mode==='old-queue'?undefined:'immediate',templateName:'appointment-confirmation',recipientEmail:'patient@example.invalid',idempotencyKey:'synthetic-key',templateData:{portalUrl:mode==='bad-link'?'https://evil.invalid':'https://psicoone.vercel.app/portal/synthetic'}};
+ const res=await handler(new Request('https://example.invalid',{method:'POST',headers:{'x-email-worker-secret':mode==='unauthorized'?'bad':env.EMAIL_WORKER_SECRET},body:JSON.stringify(body)}));
+ const data=await res.json();assert.equal(queued,0);
+ if(mode==='success'){assert.equal(res.status,200);assert.equal(data.sent,true);assert.equal(data.queued,false);assert.equal(sent,1)}
+ else if(mode==='provider-error'){assert.equal(res.status,502);assert.equal(data.sent,false)}
+ else{assert.equal(sent,0);assert.equal(res.status,{'old-queue':403,'bad-link':400,unauthorized:401,suppressed:200}[mode])}
+}
+(async()=>{for(const m of ['success','provider-error','old-queue','bad-link','unauthorized','suppressed'])await run(m);console.log('6 immediate email delivery scenarios passed; no external messages.');})().catch(e=>{console.error(e);process.exitCode=1});
