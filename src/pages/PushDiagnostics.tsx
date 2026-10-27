@@ -37,7 +37,7 @@ export default function PushDiagnostics() {
     let swStatus: DiagState["swStatus"] = "none";
     let endpoint: string | null = null;
     if ("serviceWorker" in navigator) {
-      const reg = await navigator.serviceWorker.getRegistration("/push-sw.js");
+      const reg = await navigator.serviceWorker.getRegistration("/");
       if (reg) {
         if (reg.active) swStatus = "active";
         else if (reg.installing) swStatus = "installing";

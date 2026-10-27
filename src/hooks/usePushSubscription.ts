@@ -43,7 +43,7 @@ export function usePushSubscription() {
       !!vapid;
     setSupported(ok);
     if (ok) {
-      navigator.serviceWorker.getRegistration("/push-sw.js").then(async (reg) => {
+      navigator.serviceWorker.getRegistration("/").then(async (reg) => {
         const sub = await reg?.pushManager.getSubscription();
         const key = sub?.options.applicationServerKey;
         const expected = urlBase64ToUint8Array(vapid);
@@ -69,9 +69,9 @@ export function usePushSubscription() {
         toast.error("Permissão de notificação negada");
         return;
       }
-      const reg =
-        (await navigator.serviceWorker.getRegistration("/push-sw.js")) ||
-        (await navigator.serviceWorker.register("/push-sw.js"));
+      // Use the PWA worker, which also imports the push handlers.
+      await navigator.serviceWorker.register("/sw.js");
+      const reg = await navigator.serviceWorker.ready;
       const existing = await reg.pushManager.getSubscription();
       const expectedKey = urlBase64ToUint8Array(vapid);
       const actualKey = existing?.options.applicationServerKey;
@@ -111,7 +111,7 @@ export function usePushSubscription() {
   const unsubscribe = useCallback(async () => {
     setLoading(true);
     try {
-      const reg = await navigator.serviceWorker.getRegistration("/push-sw.js");
+      const reg = await navigator.serviceWorker.getRegistration("/");
       const sub = await reg?.pushManager.getSubscription();
       if (sub) {
         await supabase.from("push_subscriptions").delete().eq("endpoint", sub.endpoint);
