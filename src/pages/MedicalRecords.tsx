@@ -889,14 +889,22 @@ const MedicalRecords = () => {
 
   const handleDeleteAttachment = async (attachment: Attachment) => {
     try {
-      await supabase.storage
+      const { error: storageError } = await supabase.storage
         .from("medical-attachments")
         .remove([attachment.file_path]);
 
-      await supabase
+      if (storageError) throw storageError;
+
+      const { data: deleted, error: deleteError } = await supabase
         .from("medical_record_attachments")
         .delete()
-        .eq("id", attachment.id);
+        .eq("id", attachment.id)
+        .select("id");
+
+      if (deleteError || !deleted?.length) {
+        toast.error("O arquivo foi removido, mas o registro do anexo não foi atualizado. Tente novamente.");
+        return;
+      }
 
       toast.success("Arquivo excluído!");
       if (selectedRecord) {

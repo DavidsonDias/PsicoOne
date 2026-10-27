@@ -352,7 +352,13 @@ export default function Financeiro() {
     const path = `${userId}/${transactionId}/${file.name}`;
     const { error: uploadError } = await supabase.storage.from("financial-attachments").upload(path, file);
     if (uploadError) { toast.error("Erro ao enviar arquivo"); setUploading(false); return; }
-    await supabase.from("financial_transactions").update({ attachment_url: path } as any).eq("id", transactionId);
+    const { data: updated, error: linkError } = await supabase.from("financial_transactions")
+      .update({ attachment_url: path } as any).eq("id", transactionId).select("id");
+    if (linkError || !updated?.length) {
+      toast.error("Arquivo enviado, mas não foi possível vinculá-lo ao lançamento. Atualize a página antes de tentar novamente.");
+      setUploading(false);
+      return;
+    }
     toast.success("Comprovante anexado!");
     setUploading(false);
     await loadTransactions(userId);
