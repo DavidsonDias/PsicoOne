@@ -88,6 +88,9 @@ Deno.serve(async (req) => {
     const results = await Promise.allSettled(
       (subs || []).map(async (s: any) => {
         try {
+          const endpoint = new URL(s.endpoint);
+          const approvedHost = endpoint.hostname === "fcm.googleapis.com" || endpoint.hostname === "web.push.apple.com" || endpoint.hostname.endsWith(".push.services.mozilla.com") || endpoint.hostname.endsWith(".notify.windows.com");
+          if (endpoint.protocol !== "https:" || endpoint.port || endpoint.username || endpoint.password || !approvedHost) return { ok: false };
           await webpush.sendNotification(
             { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
             JSON.stringify(notification)
