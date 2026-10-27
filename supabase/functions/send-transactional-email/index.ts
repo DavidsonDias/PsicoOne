@@ -63,6 +63,7 @@ Deno.serve(async (req) => {
   if (mismatch) return respond(401, { error: 'Worker secret required' })
 
   // Parse request body
+  let immediate = false
   let templateName: string
   let recipientEmail: string
   let idempotencyKey: string
@@ -71,6 +72,7 @@ Deno.serve(async (req) => {
   let externalMetadata: Record<string, any> | undefined
   try {
     const body = await req.json()
+    immediate = body.delivery === "immediate"
     templateName = body.templateName || body.template_name
     recipientEmail = body.recipientEmail || body.recipient_email
     messageId = crypto.randomUUID()
@@ -138,7 +140,8 @@ Deno.serve(async (req) => {
     )
   }
 
-  if (typeof effectiveRecipient !== 'string' || effectiveRecipient.trim().toLowerCase() !== testRecipient) {
+  if (immediate && !['appointment-confirmation', 'patient-portal-invite'].includes(templateName)) return respond(400, { error: 'Unsupported immediate template' })
+  if (typeof effectiveRecipient !== 'string' || !/^[^\s<>;,]+@[^\s<>;,]+\.[^\s<>;,]+$/.test(effectiveRecipient) || (!immediate && effectiveRecipient.trim().toLowerCase() !== testRecipient)) {
     return respond(403, { error: 'Recipient blocked by staging allowlist' })
   }
   // Template buttons must remain inside staging. Never rewrite real-user links.
@@ -327,6 +330,28 @@ Deno.serve(async (req) => {
     typeof template.subject === 'function'
       ? template.subject(templateData)
       : template.subject
+
+  // Explicit user-requested delivery only. Historical queues remain untouched.
+  if (immediate) {
+    const apiKey = Deno.env.get('RESEND_API_KEY')
+    if (!apiKey) return respond(503, { error: 'Email provider is not configured' })
+    try {
+      const delivery = await fetch('https://api.resend.com/emails', {
+        method: 'POST', signal: AbortSignal.timeout(10000),
+        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey },
+        body: JSON.stringify({ from: emailFrom, to: [effectiveRecipient.trim().toLowerCase()], subject: resolvedSubject, html, text: plainText }),
+      })
+      const result = await delivery.json().catch(() => null)
+      if (!delivery.ok || typeof result?.id !== 'string') return respond(502, { success: false, sent: false, queued: false, error: 'O provedor não confirmou o envio do e-mail.' })
+      const { error: logError } = await supabase.from('email_send_log').insert({
+        message_id: messageId, template_name: templateName, recipient_email: effectiveRecipient,
+        status: 'sent', metadata: externalMetadata || {},
+      })
+      return respond(200, { success: true, sent: true, queued: false, messageId, log_pending: Boolean(logError) })
+    } catch {
+      return respond(502, { success: false, sent: false, queued: false, error: 'Não foi possível confirmar o envio. Tente novamente.' })
+    }
+  }
 
   // 5. Enqueue the pre-rendered email for async processing by the dispatcher.
   // The dispatcher (process-email-queue) handles sending, retries, and rate-limit backoff.

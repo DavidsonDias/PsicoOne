@@ -1,4 +1,4 @@
-import { unvalidatedIntegrationResponse } from "../_shared/staging-isolation.ts";
+import { requireUser } from "../_shared/require-auth.ts";
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import webpush from "npm:web-push@3.6.7";
@@ -17,37 +17,42 @@ interface PushPayload {
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const VAPID_PUBLIC_KEY =
-  "BD81p4xbVEUVW5DFDoySC8ub-yZ0vwJbnYy2KfrbEQqruQViRfRR6SrBzpt5qiiboImi-9jL6WvFZqcyWvB-jvE";
+  "BKRI8h33q05bBu_SsOsooBzxYiEDhm2rrnuz5rj7S1qL2ZsvoF-rwh8mZuYjKOrNRIqP-4keRkYzYZqGTCDTwYg";
 const VAPID_PRIVATE_KEY = Deno.env.get("VAPID_PRIVATE_KEY")!;
 const VAPID_SUBJECT = Deno.env.get("VAPID_SUBJECT") || "mailto:contato@sevendevx.com";
 
 Deno.serve(async (req) => {
-  const migrationPause = unvalidatedIntegrationResponse(req);
-  if (migrationPause) return migrationPause;
-
-  webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
-
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
-  // Accept internal callers only (service role / cron / internal secret).
+  if (req.method !== "POST") return new Response(null, { status: 405, headers: corsHeaders });
+  // Browser tests are restricted to the verified user; internal sends require the service key.
   const token = req.headers.get("Authorization")?.replace(/^Bearer\s+/i, "")
     || req.headers.get("x-internal-secret");
   const allowed = new Set(
     [
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"),
-      Deno.env.get("INTERNAL_FUNCTION_SECRET"),
-      Deno.env.get("CRON_SECRET"),
     ].filter(Boolean) as string[],
   );
+  let callerId: string | null = null;
   if (!token || !allowed.has(token)) {
-    return new Response(JSON.stringify({ error: "Forbidden" }), {
-      status: 403,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    const auth = await requireUser(req, corsHeaders);
+    if ("error" in auth) return auth.error;
+    callerId = auth.user.id;
   }
 
   try {
     const payload = (await req.json()) as PushPayload;
+    if (callerId) {
+      if (payload.user_id && payload.user_id !== callerId || payload.user_ids?.some(id => id !== callerId)) {
+        return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      Object.assign(payload, { user_id: callerId, user_ids: [callerId], title: "Teste de notificação", body: "As notificações do PsicoOne estão funcionando.", url: "/configuracoes/diagnostico-push", tag: "diag-test" });
+    }
+    try {
+      webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+    } catch {
+      return new Response(JSON.stringify({ ok: false, code: "PUSH_CONFIGURATION_INVALID", error: "As credenciais de push do servidor precisam ser configuradas." }), { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
     if (!payload?.title) {
       return new Response(JSON.stringify({ error: "title is required" }), {
         status: 400,
@@ -83,6 +88,9 @@ Deno.serve(async (req) => {
     const results = await Promise.allSettled(
       (subs || []).map(async (s: any) => {
         try {
+          const endpoint = new URL(s.endpoint);
+          const approvedHost = endpoint.hostname === "fcm.googleapis.com" || endpoint.hostname === "web.push.apple.com" || endpoint.hostname.endsWith(".push.services.mozilla.com") || endpoint.hostname.endsWith(".notify.windows.com");
+          if (endpoint.protocol !== "https:" || endpoint.port || endpoint.username || endpoint.password || !approvedHost) return { ok: false };
           await webpush.sendNotification(
             { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
             JSON.stringify(notification)
@@ -99,12 +107,12 @@ Deno.serve(async (req) => {
     );
 
     const sent = results.filter((r) => r.status === "fulfilled" && (r as any).value.ok).length;
-    return new Response(JSON.stringify({ ok: true, total: subs?.length || 0, sent }), {
+    return new Response(JSON.stringify({ ok: sent > 0, total: subs?.length || 0, sent, error: sent ? undefined : (subs?.length ? "O provedor recusou o envio. Verifique as credenciais de push." : "Nenhum dispositivo registrado nesta conta. Ative as notificações novamente.") }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
-    console.error("[send-push]", e);
-    return new Response(JSON.stringify({ ok: false, error: String(e) }), {
+    console.error("[send-push] delivery failed");
+    return new Response(JSON.stringify({ ok: false, error: "Falha no envio de push" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

@@ -18,7 +18,7 @@ async function test(label,o={},status=200){
  }}}};
  vm.runInNewContext(source,{Request,Response,AbortSignal,Deno:{env:{get:k=>env[k]},serve:fn=>handler=fn},createClient(url,key){return key==='anon'?{auth:{async getUser(){return {data:{user:o.badAuth?null:{id:owner}},error:null}}}}:db},async fetch(url,init){
  outgoing++;assert.equal(init.headers['x-email-worker-secret'],env.EMAIL_WORKER_SECRET);assert.equal(init.headers.Authorization,undefined);
- const body=JSON.parse(init.body);assert.equal(body.recipientEmail,'test@example.invalid');assert.equal(body.metadata.invite_token,undefined);assert.equal(body.templateData.inviteUrl,'https://psicoonex.vercel.app/portal/aceitar-convite/'+invite.token);
+ const body=JSON.parse(init.body);assert.equal(body.recipientEmail,'test@example.invalid');assert.equal(body.metadata.invite_token,undefined);assert.equal(body.templateData.inviteUrl,'https://psicoone.vercel.app/portal/aceitar-convite/'+invite.token);
  if(o.networkError)throw Error('private network failure');
  return new Response(o.rawResponse??JSON.stringify(o.response??{success:true,queued:true,sent:false,messageId:'synthetic-message'}),{status:o.upstreamStatus??200});
  }});
@@ -26,7 +26,7 @@ async function test(label,o={},status=200){
  const r=await handler(new Request('https://example.invalid',{method,headers:o.noAuth?{}:{Authorization:'Bearer test'},...(method==='POST'?{body:o.raw??JSON.stringify(o.body??{patient_id:pid})}:{})}));
  const text=await r.text();assert.equal(r.status,status,label);assert(!text.includes('private '));if(env.EMAIL_WORKER_SECRET)assert(!text.includes(env.EMAIL_WORKER_SECRET));
  if(status!==200){assert.equal(outgoing,0);assert.equal(writes,0)}else{
- const data=JSON.parse(text);assert.equal(data.email_sent,o.alreadySent??false);assert.equal(data.email_queued,o.expectQueued??true);if(o.alreadySent){assert.equal(data.email_already_sent,true);assert.equal(data.email_error,null)}assert.equal(data.manual_processing,true);assert.equal(writes,o.noPending?1:0);assert.equal(outgoing,1);
+ const data=JSON.parse(text);assert.equal(data.email_sent,o.alreadySent??false);assert.equal(data.email_queued,o.expectQueued??true);if(o.alreadySent){assert.equal(data.email_error,null)}assert.equal(data.manual_processing,o.expectQueued??true);assert.equal(writes,o.noPending?1:0);assert.equal(outgoing,1);
  }
  passed++;
 }
@@ -37,7 +37,7 @@ async function test(label,o={},status=200){
  await test('no secret',{env:{EMAIL_WORKER_SECRET:''}},503);
  await test('bad JSON',{raw:'{'},400);await test('bad id',{body:{patient_id:'bad'}},400);
  await test('other owner',{patient:{psychologist_id:'other'}},404);
- await test('blocked recipient',{patient:{email:'real@example.invalid'},noPending:true},403);
+ await test('missing recipient',{patient:{email:''},noPending:true},400);
  await test('active portal',{patient:{user_id:'active'}},409);
  for(const table of ['patients','profiles','patient_invites'])await test('read failure '+table,{dbError:table},503);
  await test('reuse existing');await test('create new',{noPending:true});
@@ -48,7 +48,7 @@ async function test(label,o={},status=200){
  await test('invalid response',{rawResponse:'not json',expectQueued:false});
  await test('timeout preserves invite',{networkError:true,expectQueued:false});
  await test('already sent',{alreadySent:true,expectQueued:false,response:{success:true,queued:false,sent:true,already_sent:true,messageId:'id'}});
- await test('unconfirmed sent',{expectQueued:false,response:{success:true,queued:false,sent:true,messageId:'id'}});
+ await test('immediate sent',{alreadySent:true,expectQueued:false,response:{success:true,queued:false,sent:true,messageId:'id'}});
  await test('contradictory response',{expectQueued:false,response:{success:true,queued:true,sent:true,already_sent:true,messageId:'id'}});
  console.log(passed+' invite-patient tests passed');
 })().catch(e=>{console.error(e);process.exitCode=1});

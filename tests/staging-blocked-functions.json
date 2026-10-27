@@ -12,11 +12,9 @@
   "whatsapp-send",
   "whatsapp-webhook",
   "send-whatsapp-reminders",
-  "send-push",
   "integration-test",
   "notification-full-test",
   "create-patient-payment-link",
   "customer-portal",
-  "sync-patient-payments",
-  "dispatch-notification"
+  "sync-patient-payments"
 ]

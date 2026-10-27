@@ -37,7 +37,7 @@ export default function PushDiagnostics() {
     let swStatus: DiagState["swStatus"] = "none";
     let endpoint: string | null = null;
     if ("serviceWorker" in navigator) {
-      const reg = await navigator.serviceWorker.getRegistration("/push-sw.js");
+      const reg = await navigator.serviceWorker.getRegistration("/");
       if (reg) {
         if (reg.active) swStatus = "active";
         else if (reg.installing) swStatus = "installing";
@@ -76,7 +76,7 @@ export default function PushDiagnostics() {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error("Sessão expirada");
-      const { error } = await supabase.functions.invoke("send-push", {
+      const { data, error } = await supabase.functions.invoke("send-push", {
         body: {
           user_ids: [session.user.id],
           title: "🔔 Teste de notificação",
@@ -85,7 +85,11 @@ export default function PushDiagnostics() {
           tag: "diag-test",
         },
       });
-      if (error) throw error;
+      if (error) {
+        const detail = await error.context?.json?.().catch(() => null);
+        throw new Error(detail?.error || "Não foi possível enviar a notificação de teste.");
+      }
+      if (!data?.ok || !data?.sent) throw new Error(data?.error || "Nenhuma notificação foi entregue ao provedor.");
       toast.success("Notificação de teste enviada. Verifique seu dispositivo.");
       setTimeout(refresh, 1500);
     } catch (e: any) {
@@ -179,7 +183,7 @@ export default function PushDiagnostics() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Últimas notificações enviadas a você</CardTitle>
+              <CardTitle className="text-base">Últimos avisos registrados na sua conta</CardTitle>
             </CardHeader>
             <CardContent>
               {lastSends.length === 0 ? (
