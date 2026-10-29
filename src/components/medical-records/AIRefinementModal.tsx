@@ -11,7 +11,7 @@ interface AIRefinementModalProps {
   onOpenChange: (open: boolean) => void;
   originalText: string;
   refinedText: string;
-  mode: "refine" | "organize";
+  mode: "refine" | "organize" | "local";
   onReplace: () => void;
   onMerge: () => void;
 }
@@ -26,7 +26,7 @@ export function AIRefinementModal({
   onMerge,
 }: AIRefinementModalProps) {
   const [tab, setTab] = useState("comparison");
-  const title = mode === "organize" ? "Organização Clínica" : "Refinamento com IA";
+  const title = mode === "local" ? "Formatação local — sem IA" : mode === "organize" ? "Organização Clínica" : "Refinamento com IA";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -35,10 +35,12 @@ export function AIRefinementModal({
           <DialogTitle className="flex items-center gap-2">
             {title}
             <Badge variant="secondary" className="text-xs">
-              {mode === "organize" ? "Formato clínico" : "Texto refinado"}
+              {mode === "local" ? "Sem créditos" : mode === "organize" ? "Formato clínico" : "Texto refinado"}
             </Badge>
           </DialogTitle>
         </DialogHeader>
+
+        {mode === "local" && <p className="text-sm text-muted-foreground">Ajusta apenas espaços e linhas. Não corrige gramática, não resume e não envia o texto para um serviço de IA. Confira antes de aplicar.</p>}
 
         <Tabs value={tab} onValueChange={setTab} className="flex-1 min-h-0">
           <TabsList className="w-full">
@@ -57,7 +59,7 @@ export function AIRefinementModal({
               </div>
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
-                  <p className="text-xs font-medium text-muted-foreground">Resultado IA</p>
+                  <p className="text-xs font-medium text-muted-foreground">{mode === "local" ? "Resultado local" : "Resultado IA"}</p>
                   <ArrowRight className="h-3 w-3 text-muted-foreground" />
                 </div>
                 <ScrollArea className="h-[300px] border border-primary/30 rounded-lg p-3 bg-primary/5">

@@ -1,3 +1,4 @@
+import { formatRecordLocally } from "@/lib/local-record-format";
 import { useState, useCallback, useRef, memo, useEffect } from "react";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
@@ -112,7 +113,7 @@ export const FreeFormEditor = memo(function FreeFormEditor({
   const [isProcessing, setIsProcessing] = useState(false);
   const [currentAction, setCurrentAction] = useState<string | null>(null);
   const [refinementModal, setRefinementModal] = useState<{
-    open: boolean; original: string; refined: string; mode: "refine" | "organize";
+    open: boolean; original: string; refined: string; mode: "refine" | "organize" | "local";
   }>({ open: false, original: "", refined: "", mode: "refine" });
   const [undoStack, setUndoStack] = useState<string[]>([]);
   const [approach, setApproach] = useState("neutral");
@@ -158,6 +159,13 @@ export const FreeFormEditor = memo(function FreeFormEditor({
   }, [value, onChange]);
 
 
+  const handleLocalFormat = useCallback(() => {
+    const formatted = formatRecordLocally(value);
+    if (!formatted) return;
+    if (formatted === value) { toast.info("Os espaços e parágrafos já estão organizados."); return; }
+    setRefinementModal({ open: true, original: value, refined: formatted, mode: "local" });
+  }, [value]);
+
   const handleAIAction = useCallback(async (action: string) => {
     if (!value?.trim()) {
       toast.error("Escreva ou dite algo antes de usar a IA.");
@@ -200,7 +208,7 @@ export const FreeFormEditor = memo(function FreeFormEditor({
       console.error("AI error:", err);
       const msg: string = err?.message || "Erro ao processar com IA";
       if (/cr[eé]ditos/i.test(msg) || /402/.test(msg)) {
-        toast.error("Créditos de IA insuficientes. Adicione créditos no workspace para continuar usando o assistente.");
+        toast.error("Créditos de IA insuficientes. Seu texto foi preservado. Você pode usar Formatar sem IA para ajustar espaços e linhas sem créditos.");
       } else if (/limite/i.test(msg) || /429/.test(msg)) {
         toast.error("Muitas requisições. Aguarde alguns instantes e tente novamente.");
       } else {
@@ -312,6 +320,12 @@ export const FreeFormEditor = memo(function FreeFormEditor({
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
+
+          <Button type="button" variant="outline" size="sm" onClick={handleLocalFormat}
+            disabled={isProcessing || !value?.trim()} className="h-8 gap-2"
+            title="Organiza espaços e linhas neste dispositivo. Não usa IA nem créditos.">
+            <FileText className="h-4 w-4" /> Formatar sem IA
+          </Button>
 
           {/* Chat Button */}
           <Button
