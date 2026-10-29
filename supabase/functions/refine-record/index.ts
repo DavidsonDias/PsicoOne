@@ -1,4 +1,3 @@
-import { unvalidatedIntegrationResponse } from "../_shared/staging-isolation.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { requireUser } from "../_shared/require-auth.ts";
 
@@ -53,19 +52,24 @@ const TRANSCRIPT_RULES = `TEXTO DE ORIGEM POSSIVELMENTE TRANSCRITO DE FALA — t
 
 
 serve(async (req) => {
-  const migrationPause = unvalidatedIntegrationResponse(req);
-  if (migrationPause) return migrationPause;
 
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  if (req.method !== "POST") return new Response(JSON.stringify({ error: "Método não permitido." }), { status: 405, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   const auth = await requireUser(req, corsHeaders); if ('error' in auth) return auth.error;
 
 
   try {
-    const body = await req.json();
+    const body = await req.json().catch(() => null);
+    if (!body || typeof body !== "object" || Array.isArray(body)) return new Response(JSON.stringify({ error: "Solicitação inválida." }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     const { text, mode, action, approach, customInstruction, chatMessages } = body;
 
+    if ((chatMessages !== undefined && (!Array.isArray(chatMessages) || !chatMessages.length || chatMessages.length > 30 || chatMessages.some((m: any) => !m || !["user", "assistant"].includes(m.role) || typeof m.content !== "string") || JSON.stringify(chatMessages).length > 60000)) ||
+        (chatMessages === undefined && (typeof text !== "string" || !text.trim() || text.length > 40000)) ||
+        (customInstruction !== undefined && (typeof customInstruction !== "string" || customInstruction.length > 2000))) {
+      return new Response(JSON.stringify({ error: "Texto inválido ou muito longo. Divida em trechos menores." }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
+    if (!LOVABLE_API_KEY) throw new Error("Serviço de escrita não configurado. Contate o suporte.");
 
     // Chat mode — conversational AI assistant
     if (chatMessages && Array.isArray(chatMessages)) {
@@ -86,6 +90,7 @@ REGRAS FUNDAMENTAIS:
 
       const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
         method: "POST",
+        signal: AbortSignal.timeout(45000),
         headers: {
           Authorization: `Bearer ${LOVABLE_API_KEY}`,
           "Content-Type": "application/json",
@@ -108,9 +113,9 @@ REGRAS FUNDAMENTAIS:
             status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
-        const t = await response.text();
-        console.error("AI gateway error:", response.status, t);
-        throw new Error("AI gateway error");
+        
+        console.error("AI gateway status:", response.status);
+        throw new Error("Não foi possível processar o texto. Tente novamente.");
       }
 
       return new Response(response.body, {
@@ -145,6 +150,7 @@ REGRAS FUNDAMENTAIS:
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
+        signal: AbortSignal.timeout(45000),
       headers: {
         Authorization: `Bearer ${LOVABLE_API_KEY}`,
         "Content-Type": "application/json",
@@ -170,19 +176,20 @@ REGRAS FUNDAMENTAIS:
           status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      const t = await response.text();
-      console.error("AI gateway error:", response.status, t);
-      throw new Error("AI gateway error");
+      
+      console.error("AI gateway status:", response.status);
+      throw new Error("Não foi possível processar o texto. Tente novamente.");
     }
 
     const data = await response.json();
     const refined = data.choices?.[0]?.message?.content;
 
+    if (typeof refined !== "string" || !refined.trim()) throw new Error("A IA não retornou texto. Tente novamente.");
     return new Response(JSON.stringify({ refined }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
-    console.error("refine-record error:", e);
+    console.error("refine-record failure:", e instanceof Error ? e.name : "UnknownError");
     return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Erro desconhecido" }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
